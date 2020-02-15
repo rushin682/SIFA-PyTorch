@@ -4,8 +4,8 @@ import tensorflow as tf
 
 
 def npz2tfrecords():
-    image_pth = './example data/image_01.npz'
-    tfrecord_pth = './example data/image_01.tfrecords'
+    image_pth = './example data/image_1001.npz'
+    tfrecord_pth = './example data/image_1001.tfrecords'
 
     npz_data = np.load(image_pth)
     data_vol_val = npz_data['arr_0']
@@ -16,6 +16,9 @@ def npz2tfrecords():
     lsize_dim0_val = label_vol_val.shape[0]
     lsize_dim1_val = label_vol_val.shape[1]
     lsize_dim2_val = label_vol_val.shape[2]
+
+    print(npz_data['arr_1'].shape, "\n")
+    # print(label_vol_val)
 
     writer = tf.python_io.TFRecordWriter(tfrecord_pth)
 
@@ -37,4 +40,3 @@ def npz2tfrecords():
 
 if __name__=='__main__':
     npz2tfrecords()
-
