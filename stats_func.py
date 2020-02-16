@@ -3,7 +3,10 @@ import torch.nn.functional as F
 import numpy as np
 
 def pixel_wise_softmax(output_map):
-    return torch.nn.Softmax2d(output_map, dim=1)
+    m = torch.nn.Softmax2d()
+    return m(output_map)
+    ''' questionanble '''
+
 
 def jaccard(conf_matrix):
     num_cls = conf_matrix.shape[0]
@@ -36,8 +39,8 @@ def dice_eval(compact_pred, labels, n_class):
     eps = 1e-7
     pred = F.one_hot(compact_pred, depth = n_class)
     for i in xrange(n_class):
-        inse = tf.reduce_sum(pred[:, :, :, i] * labels[:, :, :, i])
-        union = tf.reduce_sum(pred[:, :, :, i]) + tf.reduce_sum(labels[:, :, :, i])
+        inse = torch.sum(pred[:, i, :, :] * labels[:, i, :, :])
+        union = torch.sum(pred[:, i, :, :]) + torch.sum(labels[:, i, :, :])
         dice = dice + 2.0 * inse / (union + eps)
         dice_arr.append(2.0 * inse / (union + eps))
 
