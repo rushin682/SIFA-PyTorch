@@ -28,7 +28,10 @@ def _softmax_weighted_loss(logits, gt, num_classes):
 
     !!Should use built in functions for these instead!!
     """
-    softmaxpred = torch.nn.softmax(logits)
+    softmax = torch.nn.Softmax()
+    softmaxpred = softmax(logits)
+    '''questionanble'''
+
     for i in xrange(num_classes):
         gti = gt[:,i,:,:]
         predi = softmaxpred[:,i,:,:]
@@ -49,7 +52,11 @@ def _dice_loss_fun(logits, gt, num_classes):
     """
     dice = 0
     eps = 1e-7
-    softmaxpred = torch.nn.softmax(logits)
+
+    softmax = torch.nn.Softmax()
+    softmaxpred = softmax(logits)
+    '''questionanble'''
+
     for i in xrange(num_classes):
         inse = torch.sum(softmaxpred[:, i, :, :]*gt[:, i, :, :])
         l = torch.sum(softmaxpred[:, i, :, :]*softmaxpred[:, i, :, :])
