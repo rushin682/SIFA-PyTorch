@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 
-class Convolution2D(nn.module):
+class Convolution2D(nn.Module):
     def __init__(self,
                 input_ch, output_ch,
                 kernel_size=3, stride=1,
@@ -44,7 +44,7 @@ class Convolution2D(nn.module):
         return output
 
 
-class DilatedConv2D(nn.module):
+class DilatedConv2D(nn.Module):
     def __init__(self,
                 input_ch, output_ch,
                 kernel_size=3,
@@ -87,7 +87,7 @@ class DilatedConv2D(nn.module):
         return output
 
 
-class Deconvolution2D(nn.module):
+class Deconvolution2D(nn.Module):
     def __init__(self,
                 input_ch, output_ch,
                 kernel_size=3, stride=1,

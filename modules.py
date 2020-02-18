@@ -4,7 +4,7 @@ import torch.nn as nn
 
 from layers import Convolution2D, Deconvolution2D, DilatedConv2D
 
-class Residual_block(nn.module):
+class Residual_block(nn.Module):
     def __init__(self, input_ch, output_ch, padding='REFLECT'):
         super(Residual_block, self).__init__()
 

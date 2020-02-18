@@ -20,13 +20,18 @@ IMG_HEIGHT = 256
 IMG_WIDTH = 256
 '''
 
-class SIFA(nn.module):
+class SIFA(nn.Module):
     def __init__(self,)
 
         self.generator_s_t = Generator_S_T()
 
+    def forward(self, input):
 
-class Generator_S_T(nn.module):
+        # return ...
+
+
+
+class Generator_S_T(nn.Module):
 
     def __init__(self, skip_conn=False):
         super(Generator_S_T, self).__init__()
@@ -88,7 +93,7 @@ class Generator_S_T(nn.module):
         return output
 
 
-class Discriminator_T(nn.module):
+class Discriminator_T(nn.Module):
     def __init__(self):
         super(Discriminator_T, self).__init__()
 
@@ -143,3 +148,6 @@ class Discriminator_T(nn.module):
         output = self.conv5(output)
 
         return output
+
+
+class Encoder(nn.Module):
