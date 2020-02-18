@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from layers import Convolution2D, DilatedConv2D, Deconvolution2D
+from modules import Residual_block
 import json
 
 '''
@@ -27,7 +28,7 @@ class SIFA(nn.module):
 
 class Generator_S_T(nn.module):
 
-    def __init__(self, dropout_rate):
+    def __init__(self, skip_conn=False):
         super(Generator_S_T, self).__init__()
 
         self.generator = nn.Sequential(OrderedDict([
@@ -41,5 +42,15 @@ class Generator_S_T(nn.module):
                                                     kernel_size=3, stride=2,
                                                     norm_type='Ins')),
 
-                            ('')
+                            ('res_block1', Residual_block(32*4, 32*4, padding_mode))
+                            ('res_block2', Residual_block(32*4, 32*4, padding_mode))
+                            ('res_block3', Residual_block(32*4, 32*4, padding_mode))
+                            ('res_block4', Residual_block(32*4, 32*4, padding_mode))
+                            ('res_block5', Residual_block(32*4, 32*4, padding_mode))
+                            ('res_block6', Residual_block(32*4, 32*4, padding_mode))
+                            ('res_block7', Residual_block(32*4, 32*4, padding_mode))
+                            ('res_block8', Residual_block(32*4, 32*4, padding_mode))
+                            ('res_block9', Residual_block(32*4, 32*4, padding_mode))
+
+                            ('deconv1', Deconvolution2D())
         ]))
