@@ -1,6 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from collections import OrderedDict
+
+from torchsummary import summary
 
 from layers import Convolution2D, DilatedConv2D, Deconvolution2D
 from modules import Residual_block
@@ -151,3 +154,5 @@ class Discriminator_T(nn.Module):
 
 
 class Encoder(nn.Module):
+    def __init__(self, skip_conn=False, is_training=True, dropout_rate=0.75):
+        ech = 16 # Encoder minimum channel multiple

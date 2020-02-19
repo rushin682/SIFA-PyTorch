@@ -1,13 +1,16 @@
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
+from collections import OrderedDict
+
+from torchsummary import summary
 
 class Convolution2D(nn.Module):
     def __init__(self,
                 input_ch, output_ch,
                 kernel_size=3, stride=1,
                 padding_mode="VALID",
-                dropout_rate=None,
+                dropout_rate=0,
                 norm_type=None,
                 do_relu=True, relu_factor=0,
                 is_training=True):
@@ -17,9 +20,9 @@ class Convolution2D(nn.Module):
         self.do_relu = do_relu
         self.norm_type = norm_type
 
-        padding = 0 if padding_mode="VALID" else 1
+        padding = 0 if padding_mode=="VALID" else 1
 
-        self.conv = nn.Conv2d(input_ch, output_ch, kernel_size, stride, padding)
+        self.conv = nn.Conv2d(input_ch, output_ch, kernel_size, stride, padding=padding)
         self.dropout = nn.Dropout(p=dropout_rate)
 
         if norm_type == "Ins":
@@ -50,19 +53,19 @@ class DilatedConv2D(nn.Module):
                 kernel_size=3,
                 rate=2,
                 padding_mode="VALID",
-                dropout_rate=None,
+                dropout_rate=0,
                 norm_type=None,
                 do_relu=True, relu_factor=0,
                 is_training=True):
 
-        super(Convolution2D, self).__init__()
+        super(DilatedConv2D, self).__init__()
 
         self.do_relu = do_relu
         self.norm_type = norm_type
 
-        padding = 0 if padding_mode="VALID" else 1
+        padding = 0 if padding_mode=="VALID" else 1
 
-        self.dil_conv = nn.Conv2d(input_ch, output_ch, kernel_size, dilation=rate, padding)
+        self.dil_conv = nn.Conv2d(input_ch, output_ch, kernel_size, padding=padding, dilation=rate)
         self.dropout = nn.Dropout(p=dropout_rate)
 
         if norm_type == "Ins":
@@ -96,12 +99,14 @@ class Deconvolution2D(nn.Module):
                 do_relu=True, relu_factor=0,
                 is_training=True):
 
+        super(Deconvolution2D, self).__init__()
+
         self.do_relu = do_relu
         self.norm_type = norm_type
 
-        padding = 0 if padding_mode = "VALID" else 1
+        padding = 0 if padding_mode=="VALID" else 1
 
-        self.deconv = nn.ConvTranspose2d(input_ch, output_ch, kernel_size, stride, padding)
+        self.deconv = nn.ConvTranspose2d(input_ch, output_ch, kernel_size, stride, padding=padding)
 
         if norm_type == "Ins":
             self.norm = nn.InstanceNorm2d(output_ch)
@@ -122,3 +127,14 @@ class Deconvolution2D(nn.Module):
             output = self.relu(output)
 
         return output
+
+
+if __name__ == "__main__":
+    model = Convolution2D(input_ch=3, output_ch=64, norm_type="Ins", dropout_rate=0.2)
+    summary(model, input_size=(3, 256, 256))
+
+    model_dilated_conv = DilatedConv2D(input_ch=3, output_ch=64, norm_type="Ins", dropout_rate=0.2, rate=2)
+    summary(model_dilated_conv, input_size=(3, 256, 256))
+
+    model_deconv = Deconvolution2D(input_ch=3, output_ch=64, norm_type="Ins")
+    summary(model_deconv, input_size=(3, 256, 256))
