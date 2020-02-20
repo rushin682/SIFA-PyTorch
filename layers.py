@@ -8,7 +8,7 @@ from torchsummary import summary
 class Convolution2D(nn.Module):
     def __init__(self,
                 input_ch, output_ch,
-                kernel_size=3, stride=1,
+                kernel_size=7, stride=1,
                 padding_mode="valid",
                 dropout_rate=0,
                 norm_type=None,
@@ -44,13 +44,14 @@ class Convolution2D(nn.Module):
         if self.do_relu:
             output = self.relu(output)
 
+        print("Conv2D: ", output.shape)
         return output
 
 
 class DilatedConv2D(nn.Module):
     def __init__(self,
                 input_ch, output_ch,
-                kernel_size=3,
+                kernel_size=7,
                 rate=2,
                 padding_mode="valid",
                 dropout_rate=0,
@@ -87,13 +88,14 @@ class DilatedConv2D(nn.Module):
         if self.do_relu:
             output = self.relu(output)
 
+        print("DilatedConv2D: ", output.shape)
         return output
 
 
 class Deconvolution2D(nn.Module):
     def __init__(self,
-                input_ch, output_ch,
-                kernel_size=3, stride=1,
+                outshape, input_ch, output_ch=64,
+                kernel_size=7, stride=1,
                 padding_mode="valid",
                 norm_type=None,
                 do_relu=True, relu_factor=0,
@@ -101,6 +103,7 @@ class Deconvolution2D(nn.Module):
 
         super(Deconvolution2D, self).__init__()
 
+        self.outshape = outshape
         self.do_relu = do_relu
         self.norm_type = norm_type
 
@@ -118,7 +121,7 @@ class Deconvolution2D(nn.Module):
 
     def forward(self, input):
 
-        output = self.deconv(input)
+        output = self.deconv(input, output_size = self.outshape)
 
         if not self.norm_type is None:
             output = self.norm(output)
@@ -126,6 +129,7 @@ class Deconvolution2D(nn.Module):
         if self.do_relu:
             output = self.relu(output)
 
+        print("Deconvolution2D: ", output.shape)
         return output
 
 

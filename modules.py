@@ -13,8 +13,8 @@ class Residual_block(nn.Module):
 
         self.padding=padding
 
-        self.conv1 = Convolution2D(input_ch, output_ch, kernel_size=3, stride=1, norm_type="Ins")
-        self.conv2 = Convolution2D(output_ch, output_ch, kernel_size=3, stride=1, do_relu=False, norm_type="Ins")
+        self.conv1 = Convolution2D(input_ch, output_ch, kernel_size=3, stride=1, padding_mode="valid", norm_type="Ins")
+        self.conv2 = Convolution2D(output_ch, output_ch, kernel_size=3, stride=1,padding_mode="valid", do_relu=False, norm_type="Ins")
 
         self.skip = torch.nn.ReLU()
 
@@ -27,8 +27,11 @@ class Residual_block(nn.Module):
         # Some padding
         padded_output = F.pad(output, (1,1,1,1), mode=self.padding)
         output = self.conv2(padded_output)
+
         output = self.skip(output+input)
 
+        print("Residual_block: ", output.shape)
+        return output
 
 if __name__ == "__main__":
     model = Residual_block(input_ch=64, output_ch=64)

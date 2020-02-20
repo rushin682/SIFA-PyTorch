@@ -49,9 +49,11 @@ class Generator_S_T(nn.Module):
                                                     norm_type="Ins")),
                             ("conv2", Convolution2D(gch, gch*2,
                                                     kernel_size=3, stride=2,
+                                                    padding_mode="same",
                                                     norm_type="Ins")),
                             ("conv3", Convolution2D(gch*2, gch*4,
                                                     kernel_size=3, stride=2,
+                                                    padding_mode="same",
                                                     norm_type="Ins")),
 
                             ("res_block1", Residual_block(gch*4, gch*4, padding=self.padding)),
@@ -64,18 +66,17 @@ class Generator_S_T(nn.Module):
                             ("res_block8", Residual_block(gch*4, gch*4, padding=self.padding)),
                             ("res_block9", Residual_block(gch*4, gch*4, padding=self.padding)),
 
-                            ("deconv1", Deconvolution2D(gch*4, gch*2,
+                            ("deconv1", Deconvolution2D([2, gch*2, 128, 128], gch*4, gch*2,
                                                         kernel_size=3, stride=2,
                                                         padding_mode="same",
                                                         norm_type="Ins")),
 
-                            ("deconv2", Deconvolution2D(gch*2, gch,
+                            ("deconv2", Deconvolution2D([2, gch, 256, 256], gch*2, gch,
                                                         kernel_size=3, stride=2,
                                                         padding_mode="same",
                                                         norm_type="Ins")),
-
                             ("conv_final", Convolution2D(gch, 1,
-                                                        kernel_size=7, stride=1,
+                                                        kernel_size=3, stride=1,
                                                         padding_mode="same",
                                                         norm_type=None,
                                                         do_relu=False)),
@@ -87,6 +88,7 @@ class Generator_S_T(nn.Module):
 
         # Some padding
         padded_input = F.pad(input, (3,3,3,3), mode=self.padding)
+        print("Input Shape is: ", padded_input.shape)
         output = self.generator(padded_input)
 
         if self.skip_conn is True:
@@ -95,13 +97,14 @@ class Generator_S_T(nn.Module):
         else:
             output = self.tanh(output)
 
+        print("Generator_S_T: ", output.shape)
         return output
 
 
 if __name__ == "__main__":
     model = Generator_S_T(input_ch=1, skip_conn=True)
     summary(model, input_size=(1, 256, 256))
-
+#
 
 
 # class Discriminator_T(nn.Module):
