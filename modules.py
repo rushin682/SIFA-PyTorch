@@ -31,5 +31,5 @@ class Residual_block(nn.Module):
 
 
 if __name__ == "__main__":
-    model = Residual_block(input_ch=3, output_ch=64, padding="reflect")
-    summary(model, input_size=(3, 256, 256))
+    model = Residual_block(input_ch=64, output_ch=64)
+    summary(model, input_size=(64, 256, 256))

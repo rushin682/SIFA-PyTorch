@@ -9,7 +9,7 @@ class Convolution2D(nn.Module):
     def __init__(self,
                 input_ch, output_ch,
                 kernel_size=3, stride=1,
-                padding_mode="VALID",
+                padding_mode="valid",
                 dropout_rate=0,
                 norm_type=None,
                 do_relu=True, relu_factor=0,
@@ -20,7 +20,7 @@ class Convolution2D(nn.Module):
         self.do_relu = do_relu
         self.norm_type = norm_type
 
-        padding = 0 if padding_mode=="VALID" else 1
+        padding = 0 if padding_mode=="valid" else 1
 
         self.conv = nn.Conv2d(input_ch, output_ch, kernel_size, stride, padding=padding)
         self.dropout = nn.Dropout(p=dropout_rate)
@@ -52,7 +52,7 @@ class DilatedConv2D(nn.Module):
                 input_ch, output_ch,
                 kernel_size=3,
                 rate=2,
-                padding_mode="VALID",
+                padding_mode="valid",
                 dropout_rate=0,
                 norm_type=None,
                 do_relu=True, relu_factor=0,
@@ -63,7 +63,7 @@ class DilatedConv2D(nn.Module):
         self.do_relu = do_relu
         self.norm_type = norm_type
 
-        padding = 0 if padding_mode=="VALID" else 1
+        padding = 0 if padding_mode=="valid" else 1
 
         self.dil_conv = nn.Conv2d(input_ch, output_ch, kernel_size, padding=padding, dilation=rate)
         self.dropout = nn.Dropout(p=dropout_rate)
@@ -94,7 +94,7 @@ class Deconvolution2D(nn.Module):
     def __init__(self,
                 input_ch, output_ch,
                 kernel_size=3, stride=1,
-                padding_mode="VALID",
+                padding_mode="valid",
                 norm_type=None,
                 do_relu=True, relu_factor=0,
                 is_training=True):
@@ -104,7 +104,7 @@ class Deconvolution2D(nn.Module):
         self.do_relu = do_relu
         self.norm_type = norm_type
 
-        padding = 0 if padding_mode=="VALID" else 1
+        padding = 0 if padding_mode=="valid" else 1
 
         self.deconv = nn.ConvTranspose2d(input_ch, output_ch, kernel_size, stride, padding=padding)
 
