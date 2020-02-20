@@ -101,69 +101,74 @@ class Generator_S_T(nn.Module):
         return output
 
 
+
+class Discriminator_T(nn.Module):
+    def __init__(self, input_ch):
+        super(Discriminator_T, self).__init__()
+
+        self.padding = "constant"
+        dch = 64 # Discriminator minimum channel multiple
+
+
+        self.conv1 = Convolution2D(input_ch, dch,
+                                   kernel_size=4, stride=2,
+                                   padding_mode="VALID",
+                                   norm_type="Ins",
+                                   do_relu=True, relu_factor=0.2)
+
+        self.conv2 = Convolution2D(dch, dch*2,
+                                   kernel_size=4, stride=2,
+                                   padding_mode="VALID",
+                                   norm_type="Ins",
+                                   do_relu=True, relu_factor=0.2)
+
+        self.conv3 = Convolution2D(dch*2, dch*4,
+                                   kernel_size=4, stride=2,
+                                   padding_mode="VALID",
+                                   norm_type="Ins",
+                                   do_relu=True, relu_factor=0.2)
+
+        self.conv4 = Convolution2D(dch*4, dch*8,
+                                   kernel_size=4, stride=1,
+                                   padding_mode="VALID",
+                                   norm_type="Ins",
+                                   do_relu=True, relu_factor=0.2)
+
+        self.conv5 = Convolution2D(dch*8, 1,
+                                   kernel_size=4, stride=1,
+                                   padding_mode="VALID",
+                                   norm_type=None,
+                                   do_relu=False)
+
+
+    def forward(self, input):
+
+        # Some Padding
+        padded_input = F.pad(input, (2,2,2,2), mode=self.padding)
+        output = self.conv1(padded_input)
+
+        # Some padding
+        output = F.pad(output, (2,2,2,2), mode=self.padding)
+        output = self.conv2(output)
+
+        # Some padding
+        output = F.pad(output, (2,2,2,2), mode=self.padding)
+        output = self.conv3(output)
+
+        # Some padding
+        output = F.pad(output, (2,2,2,2), mode=self.padding)
+        output = self.conv4(output)
+
+        # Some padding
+        output = F.pad(output, (2,2,2,2), mode=self.padding)
+        output = self.conv5(output)
+
+        return output
+
+
 if __name__ == "__main__":
-    model = Generator_S_T(input_ch=1, skip_conn=True)
+    model = Generator_S_T(input_ch = 1, skip_conn = True)
     summary(model, input_size=(1, 256, 256))
-#
 
-
-# class Discriminator_T(nn.Module):
-#     def __init__(self):
-#         super(Discriminator_T, self).__init__()
-#
-#         dch = 64 # Discriminator minimum channel multiple
-#
-#         self.conv1 = Convolution2D(input_ch, dch,
-#                                    kernel_size=4, stride=2,
-#                                    padding_mode="VALID",
-#                                    norm_type="Ins",
-#                                    do_relu=True, relu_factor=0.2)
-#
-#         self.conv2 = Convolution2D(dch, dch*2,
-#                                    kernel_size=4, stride=2,
-#                                    padding_mode="VALID",
-#                                    norm_type="Ins",
-#                                    do_relu=True, relu_factor=0.2)
-#
-#         self.conv3 = Convolution2D(dch*2, dch*4,
-#                                    kernel_size=4, stride=2,
-#                                    padding_mode="VALID",
-#                                    norm_type="Ins",
-#                                    do_relu=True, relu_factor=0.2)
-#
-#         self.conv4 = Convolution2D(dch*4, dch*8,
-#                                    kernel_size=4, stride=1,
-#                                    padding_mode="VALID",
-#                                    norm_type="Ins",
-#                                    do_relu=True, relu_factor=0.2)
-#
-#         self.conv5 = Convolution2D(dch*8, 1,
-#                                    kernel_size=4, stride=1,
-#                                    padding_mode="VALID",
-#                                    norm_type=None,
-#                                    do_relu=False)
-#
-#
-#     def forward(self, input):
-#
-#         # Some Padding
-#         output = self.conv1(padded_input)
-#
-#         # Some padding
-#         output = self.conv2(output)
-#
-#         # Some padding
-#         output = self.conv3(output)
-#
-#         # Some padding
-#         output = self.conv4(output)
-#
-#         # Some padding
-#         output = self.conv5(output)
-#
-#         return output
-
-
-# class Encoder(nn.Module):
-#     def __init__(self, skip_conn=False, is_training=True, dropout_rate=0.75):
-#         ech = 16 # Encoder minimum channel multiple
+    model = Discriminator_T(input_ch = 1)
+    summary(model, input_size=(1, 256, 256))
