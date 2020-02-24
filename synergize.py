@@ -56,7 +56,7 @@ class Encoder(nn.Module):
                                                          norm_type="Batch",
                                                          dropout_rate=dropout_rate,
                                                          is_training=is_training)),
-                                ("M3", nn.MaxPool2d(kernel_size=2, stride=2, padding=1)),
+                                ("M3", nn.MaxPool2d(kernel_size=2, stride=2, padding=0)),
 
 
                                 ("R128_1", Residual_block(ech*4, ech*8,
@@ -141,6 +141,75 @@ class Encoder(nn.Module):
 
         return dilation_output, residual_output
 
+#___________________________________________________________________________________________
+
+class Decoder(nn.Module):
+    def __init__(self, latent_inp_ch, skip_conn=False):
+        super(Decoder, self).__init__()
+
+        dch = 32 # Encoder minimum channel multiple
+        self.padding = "constant"
+        self.skip_conn = skip_conn
+
+        self.decoder = nn.Sequential(OrderedDict([
+
+                                ("conv1", Convolution2D(latent_inp_ch, dch*4,
+                                                        kernel_size=3, stride=1,
+                                                        deviation=0.02,
+                                                        padding_mode="same",
+                                                        norm_type="Ins")),
+
+                                ("res_block1", Residual_block(dch*4, dch*4, padding=self.padding, norm_type="Ins")),
+                                ("res_block2", Residual_block(dch*4, dch*4, padding=self.padding, norm_type="Ins")),
+                                ("res_block3", Residual_block(dch*4, dch*4, padding=self.padding, norm_type="Ins")),
+                                ("res_block4", Residual_block(dch*4, dch*4, padding=self.padding, norm_type="Ins")),
+
+                                ("deconv1", Deconvolution2D([2, dch*2, 64, 64], dch*4, dch*2,
+                                                            kernel_size=3, stride=2,
+                                                            deviation=0.02,
+                                                            padding_mode="same",
+                                                            norm_type="Ins")),
+
+                                ("deconv2", Deconvolution2D([2, dch*2, 128, 128], dch*2, dch*2,
+                                                            kernel_size=3, stride=2,
+                                                            deviation=0.02,
+                                                            padding_mode="same",
+                                                            norm_type="Ins")),
+
+                                ("deconv3", Deconvolution2D([2, dch, 256, 256], dch*2, dch,
+                                                            kernel_size=3, stride=2,
+                                                            deviation=0.02,
+                                                            padding_mode="same",
+                                                            norm_type="Ins")),
+
+                                ("conv_final", Convolution2D(dch, 1,
+                                                        kernel_size=3, stride=1,
+                                                        deviation=0.02,
+                                                        padding_mode="same",
+                                                        norm_type=None,
+                                                        do_relu=False))
+                                ]))
+
+        self.tanh = nn.Tanh()
+
+
+    def forward(self, latent_input, image_input):
+
+        output = self.decoder(latent_input)
+
+        if self.skip_conn is True:
+            output = self.tanh(image_input + output)
+
+        else:
+            ouptut = self.tanh(output)
+
+        return output
+
+#___________________________________________________________________________________________
+
 if __name__ == "__main__":
     model = Encoder(input_ch = 1, skip_conn = True)
     summary(model, input_size=(1, 256, 256))
+
+    model = Decoder(latent_inp_ch = 512, skip_conn = True)
+    summary(model, input_size=[(512, 32, 32), (1, 256, 256)])

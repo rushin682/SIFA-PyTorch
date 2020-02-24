@@ -119,35 +119,35 @@ class Discriminator_T(nn.Module):
         self.conv1 = Convolution2D(input_ch, dch,
                                    kernel_size=4, stride=2,
                                    deviation=0.02,
-                                   padding_mode="VALID",
+                                   padding_mode="valid",
                                    norm_type="Ins",
                                    do_relu=True, relu_factor=0.2)
 
         self.conv2 = Convolution2D(dch, dch*2,
                                    kernel_size=4, stride=2,
                                    deviation=0.02,
-                                   padding_mode="VALID",
+                                   padding_mode="valid",
                                    norm_type="Ins",
                                    do_relu=True, relu_factor=0.2)
 
         self.conv3 = Convolution2D(dch*2, dch*4,
                                    kernel_size=4, stride=2,
                                    deviation=0.02,
-                                   padding_mode="VALID",
+                                   padding_mode="valid",
                                    norm_type="Ins",
                                    do_relu=True, relu_factor=0.2)
 
         self.conv4 = Convolution2D(dch*4, dch*8,
                                    kernel_size=4, stride=1,
                                    deviation=0.02,
-                                   padding_mode="VALID",
+                                   padding_mode="valid",
                                    norm_type="Ins",
                                    do_relu=True, relu_factor=0.2)
 
         self.conv5 = Convolution2D(dch*8, 1,
                                    kernel_size=4, stride=1,
                                    deviation=0.02,
-                                   padding_mode="VALID",
+                                   padding_mode="valid",
                                    norm_type=None,
                                    do_relu=False)
 
