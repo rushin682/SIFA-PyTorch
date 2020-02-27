@@ -22,7 +22,7 @@ def lsgan_loss_discriminator(prob_real_is_real, prob_fake_is_real):
             torch.mean((prob_fake_is_real-0)**2)) * 0.5
 
 
-def _softmax_weighted_loss(logits, gt, num_classes):
+def _softmax_weighted_loss(logits, gt, num_classes=5):
     """
     Calculate weighted cross-entropy loss.
 
@@ -46,7 +46,7 @@ def _softmax_weighted_loss(logits, gt, num_classes):
     return loss
 
 
-def _dice_loss_fun(logits, gt, num_classes):
+def _dice_loss_fun(logits, gt, num_classes=5):
     """
     Calculate dice loss.
     """
@@ -66,7 +66,7 @@ def _dice_loss_fun(logits, gt, num_classes):
     return 1 - 1.0 * dice / 5
 
 
-def task_loss(prediction, g, num_classes):
+def task_loss(prediction, g, num_classes=5):
     """
     Calculate task loss, which consists of the weighted cross entropy loss and dice loss
     """
