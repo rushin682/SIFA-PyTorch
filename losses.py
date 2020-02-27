@@ -7,14 +7,14 @@ def cycle_consistency_loss(real_images, generated_images):
     return torch.mean(torch.abs(real_images - generated_images))
 
 
-def lsgan_loss_generator(prob_fake_is_real):
+def generator_loss(prob_fake_is_real):
     """
     Computes the LS-GAN loss as minimized by the generator.
     """
     return torch.mean((1-prob_fake_is_real)**2)
 
 
-def lsgan_loss_discriminator(prob_real_is_real, prob_fake_is_real):
+def discriminator_loss(prob_real_is_real, prob_fake_is_real):
     """
     Computes the LS-GAN loss as minimized by the discriminator.
     """
@@ -46,7 +46,7 @@ def _softmax_weighted_loss(logits, gt, num_classes=5):
     return loss
 
 
-def _dice_loss_fun(logits, gt, num_classes=5):
+def _dice_loss(logits, gt, num_classes=5):
     """
     Calculate dice loss.
     """
@@ -71,6 +71,6 @@ def task_loss(prediction, g, num_classes=5):
     Calculate task loss, which consists of the weighted cross entropy loss and dice loss
     """
     ce_loss = _softmax_weighted_loss(prediction, gt, num_classes)
-    dice_loss = _dice_loss_fun(prediction, gt, num_classes)
+    dice_loss = _dice_loss(prediction, gt, num_classes)
 
     return ce_loss, dice_loss
