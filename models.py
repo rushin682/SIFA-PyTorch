@@ -26,6 +26,90 @@ IMG_HEIGHT = 256
 IMG_WIDTH = 256
 '''
 
+class SIFA(nn.Module):
+
+    def __init__(self, skip_conn=False, is_training=True, dropout_rate=0.75):
+        super(SIFA, self).__init__()
+
+        self.skip_conn = skip_conn
+        self.dropout_rate = dropout_rate
+        self.is_training = is_training
+
+        self.generator_s_t = Generator_S_T(input_ch=3, skip_conn=self.skip_conn)
+        # input_ch could be either 3 or 1
+
+        self.discriminator_t = Discriminator_T(input_ch=1)
+
+        self.discriminator_aux = Discriminator_AUX(input_ch=1)
+
+        self.discriminator_mask = Discriminator_MASK(input_ch=5)
+
+        self.encoder = Encoder(input_ch=3, skip_conn=self.skip_conn, dropout_rate=self.dropout_rate, is_training=self.is_training)
+        # input_ch could be either 3 or 1
+
+        self.decoder = Decoder(latent_inp_ch=512, skip_conn=self.skip_conn)
+
+        self.segmenter = Segmenter(latent_inp_ch=512, dropout_rate=self.dropout_rate)
+
+
+    def forward(self, images_s, images_t, fake_pool_s, fake_pool_t):
+        # images_s = inputs['images_s']
+        # images_t = inputs['images_t']
+        # fake_pool_s = inputs['fake_pool_s']
+        # fake_pool_t = inputs['fake_pool_t']
+
+        prob_real_s_is_real, prob_real_s_aux = self.discriminator_aux(images_s[:, 1, :, :].unsqueeze(1))
+        prob_real_t_is_real = self.discriminator_t(images_t[:, 1, :, :].unsqueeze(1))
+
+        fake_images_t = self.generator_s_t(images_s)
+        latent_t = self.encoder(images_t)
+
+        fake_images_s = self.decoder(latent_t, images_t[:, 1, :, :].unsqueeze(1))
+
+        pred_mask_t = self.segmenter(latent_t)
+
+        prob_fake_s_is_real, prob_fake_s_aux_is_real = self.discriminator_aux(fake_images_s)
+        prob_fake_t_is_real = self.discriminator_t(fake_images_t)
+
+        latent_fake_t = self.encoder(torch.cat((fake_images_t, fake_images_t, fake_images_t), 1))
+        cycle_images_t = self.generator_s_t(torch.cat((fake_images_s, fake_images_s, fake_images_s), 1))
+
+        cycle_images_s = self.decoder(latent_fake_t, fake_images_t)
+
+        pred_mask_fake_t = self.segmenter(latent_fake_t)
+
+        prob_fake_pool_s_is_real, prob_fake_pool_s_aux_is_real = self.discriminator_aux(fake_pool_s)
+        prob_fake_pool_t_is_real = self.discriminator_t(fake_pool_t)
+
+        prob_cycle_s_is_real, prob_cycle_s_aux_is_real = self.discriminator_aux(cycle_images_s)
+
+        prob_pred_mask_fake_t_is_real = self.discriminator_mask(pred_mask_fake_t)
+        prob_pred_mask_t_is_real = self.discriminator_mask(pred_mask_t)
+
+        return {
+            'prob_real_s_is_real': prob_real_s_is_real,
+            'prob_real_t_is_real': prob_real_t_is_real,
+            'prob_fake_s_is_real': prob_fake_s_is_real,
+            'prob_fake_t_is_real': prob_fake_t_is_real,
+            'prob_fake_pool_s_is_real': prob_fake_pool_s_is_real,
+            'prob_fake_pool_t_is_real': prob_fake_pool_t_is_real,
+            'cycle_images_s': cycle_images_s,
+            'cycle_images_t': cycle_images_t,
+            'fake_images_s': fake_images_s,
+            'fake_images_t': fake_images_t,
+            'pred_mask_s': pred_mask_t,
+            'pred_mask_t': pred_mask_t,
+            'pred_mask_fake_s': pred_mask_fake_t,
+            'pred_mask_fake_t': pred_mask_fake_t,
+            'prob_pred_mask_fake_t_is_real': prob_pred_mask_fake_t_is_real,
+            'prob_pred_mask_t_is_real': prob_pred_mask_t_is_real,
+            'prob_fake_s_aux_is_real': prob_fake_s_aux_is_real,
+            'prob_fake_pool_s_aux_is_real': prob_fake_pool_s_aux_is_real,
+            'prob_cycle_s_aux_is_real': prob_cycle_s_aux_is_real,
+        }
+
+
+
 
 
 class Generator_S_T(nn.Module):
@@ -88,16 +172,16 @@ class Generator_S_T(nn.Module):
 
         # Some padding
         padded_input = F.pad(input, (3,3,3,3), mode=self.padding)
-        print("Input Shape is: ", padded_input.shape)
+        # print("Input Shape is: ", padded_input.shape)
         output = self.generator(padded_input)
 
         if self.skip_conn is True:
-            output = self.tanh(input + output)
+            output = self.tanh(input[:, 1, :, :] + output)
 
         else:
             output = self.tanh(output)
 
-        print("Generator_S_T: ", output.shape)
+        # print("Generator_S_T: ", output.shape)
         return output
 
 
@@ -242,6 +326,77 @@ class Discriminator_AUX(nn.Module):
 
 #___________________________________________________________________________________________
 
+class Discriminator_MASK(nn.Module):
+    def __init__(self, input_ch):
+        super(Discriminator_MASK, self).__init__()
+
+        self.padding = "constant"
+        dch = 64 # Discriminator minimum channel multiple
+
+
+        self.conv1 = Convolution2D(input_ch, dch,
+                                   kernel_size=4, stride=2,
+                                   deviation=0.02,
+                                   padding_mode="valid",
+                                   norm_type="Ins",
+                                   do_relu=True, relu_factor=0.2)
+
+        self.conv2 = Convolution2D(dch, dch*2,
+                                   kernel_size=4, stride=2,
+                                   deviation=0.02,
+                                   padding_mode="valid",
+                                   norm_type="Ins",
+                                   do_relu=True, relu_factor=0.2)
+
+        self.conv3 = Convolution2D(dch*2, dch*4,
+                                   kernel_size=4, stride=2,
+                                   deviation=0.02,
+                                   padding_mode="valid",
+                                   norm_type="Ins",
+                                   do_relu=True, relu_factor=0.2)
+
+        self.conv4 = Convolution2D(dch*4, dch*8,
+                                   kernel_size=4, stride=1,
+                                   deviation=0.02,
+                                   padding_mode="valid",
+                                   norm_type="Ins",
+                                   do_relu=True, relu_factor=0.2)
+
+        self.conv5 = Convolution2D(dch*8, 1,
+                                   kernel_size=4, stride=1,
+                                   deviation=0.02,
+                                   padding_mode="valid",
+                                   norm_type=None,
+                                   do_relu=False)
+
+
+    def forward(self, input):
+
+        # Some Padding
+        padded_input = F.pad(input, (2,2,2,2), mode=self.padding)
+        output = self.conv1(padded_input)
+
+        # Some padding
+        output = F.pad(output, (2,2,2,2), mode=self.padding)
+        output = self.conv2(output)
+
+        # Some padding
+        output = F.pad(output, (2,2,2,2), mode=self.padding)
+        output = self.conv3(output)
+
+        # Some padding
+        output = F.pad(output, (2,2,2,2), mode=self.padding)
+        output = self.conv4(output)
+
+        # Some padding
+        output = F.pad(output, (2,2,2,2), mode=self.padding)
+        output = self.conv5(output)
+
+        return output
+
+#___________________________________________________________________________________________
+
+
 class Encoder(nn.Module):
     def __init__(self, input_ch, skip_conn=False, dropout_rate=0.75, is_training=True):
         super(Encoder, self).__init__()
@@ -371,7 +526,7 @@ class Encoder(nn.Module):
 
         dilation_output = self.dilation_chunk(residual_output)
 
-        return dilation_output, residual_output
+        return dilation_output
 
 #___________________________________________________________________________________________
 
@@ -383,7 +538,7 @@ class Decoder(nn.Module):
         self.padding = "constant"
         self.skip_conn = skip_conn
 
-        self.decoder = nn.Sequential(OrderedDict([
+        self.decode_net = nn.Sequential(OrderedDict([
 
                                 ("conv1", Convolution2D(latent_inp_ch, dch*4,
                                                         kernel_size=3, stride=1,
@@ -427,7 +582,7 @@ class Decoder(nn.Module):
 
     def forward(self, latent_input, image_input):
 
-        output = self.decoder(latent_input)
+        output = self.decode_net(latent_input)
 
         if self.skip_conn is True:
             output = self.tanh(image_input + output)
@@ -443,38 +598,44 @@ class Segmenter(nn.Module):
     def __init__(self, latent_inp_ch, dropout_rate=0.75):
         super(Segmenter, self).__init__()
 
-        self.segmenter = Convolution2D(latent_inp_ch, 5,
+        self.segment_net = Convolution2D(latent_inp_ch, 5,
                                        kernel_size=1, stride=1,
                                        padding_mode="same",
                                        norm_type=None,
                                        do_relu=False,
                                        dropout_rate=dropout_rate)
 
+        self.upsample = torch.nn.UpsamplingBilinear2d(size=(256,256))
+
 
 
     def forward(self, latent_input):
 
-        output = self.segmenter(latent_input)
+        output = self.segment_net(latent_input)
+        output = self.upsample(output)
 
         # resized_output = to_tensor(resize(to_pil_image(output.squeeze())))
 
         return output
 
 if __name__ == "__main__":
-    model = Segmenter(latent_inp_ch = 512, dropout_rate=0.75)
-    summary(model, input_size=(512, 40, 40))
+    # model = Segmenter(latent_inp_ch = 512, dropout_rate=0.75)
+    # summary(model, input_size=(512, 40, 40))
+    #
+    # model = Encoder(input_ch = 1, skip_conn = True)
+    # summary(model, input_size=(1, 256, 256))
+    #
+    # model = Decoder(latent_inp_ch = 512, skip_conn = True)
+    # summary(model, input_size=[(512, 32, 32), (1, 256, 256)])
+    #
+    # model = Generator_S_T(input_ch = 1, skip_conn = True)
+    # summary(model, input_size=(1, 256, 256))
+    #
+    # model = Discriminator_T(input_ch = 1)
+    # summary(model, input_size=(1, 256, 256))
+    #
+    # model = Discriminator_AUX(input_ch = 1)
+    # summary(model, input_size=(1, 256, 256))
 
-    model = Encoder(input_ch = 1, skip_conn = True)
-    summary(model, input_size=(1, 256, 256))
-
-    model = Decoder(latent_inp_ch = 512, skip_conn = True)
-    summary(model, input_size=[(512, 32, 32), (1, 256, 256)])
-
-    model = Generator_S_T(input_ch = 1, skip_conn = True)
-    summary(model, input_size=(1, 256, 256))
-
-    model = Discriminator_T(input_ch = 1)
-    summary(model, input_size=(1, 256, 256))
-
-    model = Discriminator_AUX(input_ch = 1)
-    summary(model, input_size=(1, 256, 256))
+    model = SIFA(skip_conn=False, is_training=True, dropout_rate=0.75)
+    summary(model, input_size=[(3, 256, 256), (3, 256, 256), (1, 256, 256), (1, 256, 256)])

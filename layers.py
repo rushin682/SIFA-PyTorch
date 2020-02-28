@@ -49,7 +49,7 @@ class Convolution2D(nn.Module):
         if self.do_relu:
             output = self.relu(output)
 
-        print("Conv2D: ", output.shape)
+        # print("Conv2D: ", output.shape)
         return output
 
 
@@ -100,7 +100,7 @@ class DilatedConv2D(nn.Module):
         if self.do_relu:
             output = self.relu(output)
 
-        print("DilatedConv2D: ", output.shape)
+        # print("DilatedConv2D: ", output.shape)
         return output
 
 
@@ -146,7 +146,7 @@ class Deconvolution2D(nn.Module):
         if self.do_relu:
             output = self.relu(output)
 
-        print("Deconvolution2D: ", output.shape)
+        # print("Deconvolution2D: ", output.shape)
         return output
 
 

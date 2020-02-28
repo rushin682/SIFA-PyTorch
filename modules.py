@@ -56,16 +56,16 @@ class Residual_block(nn.Module):
 
         # If True, we pad channels with (output_ch-input_ch/2)
         if self.channel_pad:
-            print("Padded channel number: ", input.shape)
-            print("Padding Channels: ")
+            # print("Padded channel number: ", input.shape)
+            # print("Padding Channels: ")
             input = F.pad(input,
                            (0,0,0,0,(self.output_ch-self.input_ch)//2, (self.output_ch-self.input_ch)//2),
                            mode=self.padding)
-            print("Padded channel number: ", input.shape)
+            # print("Padded channel number: ", input.shape)
 
         output = self.skip(output+input)
 
-        print("Residual_block: ", output.shape)
+        # print("Residual_block: ", output.shape)
         return output
 
 class Dilated_Residual_block(nn.Module):
