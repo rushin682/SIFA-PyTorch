@@ -18,13 +18,13 @@ with open('./config_param.json') as config_file:
 
 BATCH_SIZE = int(config['batch_size'])
 POOL_SIZE = int(config['pool_size'])
-
+'''
 # The height of each image.
 IMG_HEIGHT = 256
 
 # The width of each image.
 IMG_WIDTH = 256
-'''
+
 
 class SIFA(nn.Module):
 
@@ -52,11 +52,11 @@ class SIFA(nn.Module):
         self.segmenter = Segmenter(latent_inp_ch=512, dropout_rate=self.dropout_rate)
 
 
-    def forward(self, images_s, images_t, fake_pool_s, fake_pool_t):
-        # images_s = inputs['images_s']
-        # images_t = inputs['images_t']
-        # fake_pool_s = inputs['fake_pool_s']
-        # fake_pool_t = inputs['fake_pool_t']
+    def forward(self, inputs):
+        images_s = inputs['images_s']
+        images_t = inputs['images_t']
+        fake_pool_s = inputs['fake_pool_s']
+        fake_pool_t = inputs['fake_pool_t']
 
         prob_real_s_is_real, prob_real_s_aux = self.discriminator_aux(images_s[:, 1, :, :].unsqueeze(1))
         prob_real_t_is_real = self.discriminator_t(images_t[:, 1, :, :].unsqueeze(1))
