@@ -18,7 +18,9 @@ from torch.optim.lr_scheduler import StepLR
 
 from layers import Convolution2D, DilatedConv2D, Deconvolution2D
 from modules import Residual_block, Dilated_Residual_block
-from models import SIFA, Generator_S_T, Discriminator_T, Discriminator_AUX, Discriminator_MASK, Encoder, Decoder, Segmenter
+import model.IMG_HEIGHT
+import model.IMG_WIDTH
+from model import SIFA_generators, SIFA_discriminators, Generator_S_T, Discriminator_T, Discriminator_AUX, Discriminator_MASK, Encoder, Decoder, Segmenter
 from losses import cycle_consistency_loss, generator_loss, discriminator_loss, task_loss
 
 from stats_func import *
@@ -41,8 +43,8 @@ class UDA:
         self._images_dir = os.path.join(self._output_dir, 'imgs')
         self._num_imgs_to_save = 20
         self._pool_size = int(config['pool_size'])
-        self._lambda_a = float(config['_LAMBDA_A'])
-        self._lambda_b = float(config['_LAMBDA_B'])
+        self._lambda_s = float(config['_LAMBDA_S'])
+        self._lambda_t = float(config['_LAMBDA_T'])
 
         self._skip_conn = bool(config['skip_conn'])
         self._num_cls = int(config['num_cls'])
@@ -59,9 +61,9 @@ class UDA:
 
         self.nGPU = config['ngpu']
 
-        self.fake_images_A = np.zeros(
+        self.fake_images_s = np.zeros(
             (self._pool_size, self._batch_size, model.IMG_HEIGHT, model.IMG_WIDTH, 1))
-        self.fake_images_B = np.zeros(
+        self.fake_images_t = np.zeros(
             (self._pool_size, self._batch_size, model.IMG_HEIGHT, model.IMG_WIDTH, 1))
 
     # '''
@@ -76,19 +78,19 @@ class UDA:
     #         # print("Saving image {}/{}".format(i, self._num_imgs_to_save))
     # '''
     #
-    # def fake_image_pool(self, num_fakes, fake, fake_pool):
-    #     if num_fakes < self._pool_size:
-    #         fake_pool[num_fakes] = fake
-    #         return fake
-    #     else:
-    #         p = random.random()
-    #         if p > 0.5:
-    #             random_id = random.randint(0, self._pool_size - 1)
-    #             temp = fake_pool[random_id]
-    #             fake_pool[random_id] = fake
-    #             return temp
-    #         else:
-    #             return fake
+    def fake_image_pool(self, num_fakes, fake, fake_pool):
+        if num_fakes < self._pool_size:
+            fake_pool[num_fakes] = fake
+            return fake
+        else:
+            p = random.random()
+            if p > 0.5:
+                random_id = random.randint(0, self._pool_size - 1)
+                temp = fake_pool[random_id]
+                fake_pool[random_id] = fake
+                return temp
+            else:
+                return fake
 
 
     def train(self):
@@ -102,11 +104,16 @@ class UDA:
 
 
         #-------------------- SETTINGS: NETWORK ARCHITECTURE
-        self.model = SIFA(skip_conn=self._skip_conn, is_training=self._is_training, dropout_rate=self._dropout_rate)
-        self.model = self.model.to(device)
+        self.model_generators = SIFA_generators(skip_conn=self._skip_conn, is_training=self._is_training, dropout_rate=self._dropout_rate)
+        self.model_generators = self.model_generators.to(device)
+
+        self.model_discriminators = SIFA_discriminators()
+        self.model_discriminators = self.model_discriminators.to(device)
 
         if (device.type == 'cuda') and (self.ngpu > 1):
-            self.model = nn.DataParallel(self.model, list(range(self.ngpu)))
+            self.model_generators = nn.DataParallel(self.model_generators, list(range(self.ngpu)))
+            self.model_discriminators = nn.DataParallel(self.model_discriminators, list(range(self.ngpu)))
+
 
         # Restore model to run from last checkpoint
         # if self._to_restore:
@@ -117,14 +124,15 @@ class UDA:
         curr_lr = self._base_lr
         curr_seg_lr = self._segmentation_lr
 
-        self.generator_s_t_optimizer = optim.Adam(self.model.generator_s_t.parameters(), lr=curr_lr, betas=(0.5, 0.999))
-        self.generator_t_s_optimizer = optim.Adam(self.model.decoder.parameters(), lr=curr_lr, betas=(0.5, 0.999))
+        self.generator_s_t_optimizer = optim.Adam(self.model_generators.generator_s_t.parameters(), lr=curr_lr, betas=(0.5, 0.999))
+        self.generator_t_s_optimizer = optim.Adam(self.model_generators.decoder.parameters(), lr=curr_lr, betas=(0.5, 0.999))
 
-        self.discriminator_s_optimizer = optim.Adam(self.model.discriminator_s.parameters(), lr=curr_lr, betas=(0.5, 0.999))
-        self.discriminator_t_optimizer = optim.Adam(self.model.discriminator_aux.parameters(), lr=curr_lr, betas=(0.5, 0.999))
-        self.discriminator_p_optimizer = optim.Adam(self.model.discriminator_mask.parameters(), lr=curr_lr, betas=(0.5, 0.999))
+        self.discriminator_s_optimizer = optim.Adam(self.model_discriminators.discriminator_aux.parameters(), lr=curr_lr, betas=(0.5, 0.999))
+        self.discriminator_t_optimizer = optim.Adam(self.model_discriminators.discriminator_t.parameters(), lr=curr_lr, betas=(0.5, 0.999))
+        self.discriminator_p_optimizer = optim.Adam(self.model_discriminators.discriminator_mask.parameters(), lr=curr_lr, betas=(0.5, 0.999))
 
-        self.segmentation_optimizer = optim.Adam(self.model.encoder.parameters() + self.model.segmenter.parameters(), lr=curr_seg_lr)
+        self.segmentation_optimizer = optim.Adam(self.model_generators.encoder.parameters() + self.model_generators.segmenter.parameters(), lr=curr_seg_lr, weight_decay=0.0001)
+
 
         self.adverserial_scheduler = StepLR(self.segmentation_optimizer, step_size=2, gamma=0.9, last_epoch=-1)
 
@@ -136,7 +144,8 @@ class UDA:
         self.num_fake_inputs = 0
         # self.max_images = something
 
-        self.model.train()
+        self.model_generators.train()
+        self.model_discriminators.train()
         for epoch in range(0, self._num_epoch):
 
             print("In the epoch", epoch)
@@ -171,44 +180,152 @@ class UDA:
                 print("Processing batch {}".format(idx))
 
                 # Executing each network with the current resources
+                images_s = images_s.to(device)
+                images_t = images_t.to(device)
+                gts_s = gts_s.to(device)
+                gts_t = gts_t.to(device)
 
+                generated_images = self.model_generators(input = {"images_s": images_s, "images_t": images_t})
+
+                # Adding all the synthesized images | fake images to a list for discriminator networks
+                generated_images["fake_pool_t"] = self.fake_image_pool(self.num_fake_inputs, generated_images["fake_images_t"], self.fake_images_t)
+                generated_images["fake_pool_s"] = self.fake_image_pool(self.num_fake_inputs, generated_images["fake_images_s"], self.fake_images_s)
+                self.num_fake_inputs += 1
+
+                discriminator_results = self.model_discriminators(generated_images)
 
                 # ----------Optimizing the Generator_S_T Network-----------
-                # Get Loss specific to generator_s_t and propogate backwards
-                # Step optimizer
-                # Adding all the synthesized images | fake images to a list for below networks
 
+                # Set Zero Gradients
+                self.model_generators.zero_grad()
+                self.model_discriminators.zero_grad()
+
+                # Get Loss specific to generator_s_t and propogate backwards
+                cycle_consistency_loss_s = \
+                    self._lambda_s * losses.cycle_consistency_loss(
+                        real_images=images_s[:,1,:,:].unsqueeze(1),
+                        generated_images=generated_images["cycle_images_s"]
+                )
+
+                cycle_consistency_loss_t = \
+                    self._lambda_t * losses.cycle_consistency_loss(
+                        real_images=self.images_t[:,1,:,:].unsqueeze(1),
+                        generated_images=generated_images["cycle_images_t"]
+                )
+
+                lsgan_loss_t = losses.generator_loss(discriminator_results["prob_fake_t_is_real"])
+
+                g1_generator_s_t_loss = cycle_consistency_loss_s + lsgan_loss_t
+                g1_generator_s_t_loss.backward(retain_graph=True)
+
+                g2_generator_s_t_loss = cycle_consistency_loss_t
+                g2_generator_s_t_loss.backward(retain_graph=True)
+                self.generator_s_t_optimizer.step()
+                # Step optimizer
 
 
 
                 # ----------Optimizing the Discriminator_T Network-----------
+
+                # Set Zero Gradients
+                self.model_generators.zero_grad()
+                self.model_discriminators.zero_grad()
+
                 # Get Loss specific to Discriminator_T and propogate backwards
+
+                discriminator_t_loss_real, discriminator_t_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_results["prob_real_t_is_real"],
+                                                                 prob_fake_is_real=discriminator_results["prob_fake_pool_t_is_real"])
+
+                discriminator_t_loss_real.backward()
+                discriminator_t_loss_fake.backward()
+
                 # Step optimizer
+                self.discriminator_t_optimizer.step()
+
 
 
 
                 # ----------Optimizing the Segmentation Network i.e E + C-----------
+
+                #  Set Zero Gradients
+                self.model_generators.zero_grad()
+                self.model_discriminators.zero_grad()
+
                 # Get Loss specific to Segmentation and propogate backwards
+
+                ce_loss_t, dice_loss_t = losses.task_loss(generated_images["pred_mask_fake_b"], gts_s)
+
+                lsgan_loss_s = losses.generator_loss(discriminator_results["prob_fake_s_is_real"])
+                g1_generator_t_s_loss = cycle_consistency_loss_s
+                g2_generator_t_s_loss = cycle_consistency_loss_t + lsgan_loss_s
+
+                g1_segmentation_t_loss = ce_loss_t + dice_loss_t + 0.1*g1_generator_t_s_loss
+                g1_segmentation_t_loss.backward(retain_graph=True)
+
+                g2_segmentation_t_loss = 0.1*g2_generator_t_s_loss + lsgan_loss_p_weight_value*lsgan_loss_p + 0.1*lsgan_loss_a_aux
+                g2_segmentation_t_loss.backward(retain_graph=True)
+
                 # Step optimizer
+                self.segmentation_optimizer.step()
 
 
 
                 # ----------Optimizing the Generator_T_S Network i.e Decoder-----------
-                # Get Loss specific to Decoder and propogate backwards
-                # Step optimizer
-                # Adding all the synthesized images | fake images to a list for below networks
 
+                #  Set Zero Gradients
+                self.model_generators.zero_grad()
+                self.model_discriminators.zero_grad()
+
+                # Get Loss specific to Decoder and propogate backwards
+                lsgan_loss_s = losses.generator_loss(discriminator_results["prob_fake_s_is_real"])
+                g1_generator_t_s_loss = cycle_consistency_loss_s
+                g2_generator_t_s_loss = cycle_consistency_loss_t + lsgan_loss_s
+
+                g1_generator_t_s_loss.backward(retain_graph=True)
+                g2_generator_t_s_loss.backward(retain_graph=True)
+
+                # Step optimizer
+                self.generator_t_s_optimizer.step()
 
 
                 # ----------Optimizing the Discriminator_S Network i.e Discriminator_AUX-----------
-                # Get Loss specific to Decoder and propogate backwards
-                # Step optimizer
 
+                #  Set Zero Gradients
+                self.model_generators.zero_grad()
+                self.model_discriminators.zero_grad()
+
+                # Get Loss specific to Decoder and propogate backwards
+                discriminator_s_loss_real, discriminator_s_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_results["prob_real_s_is_real"],
+                                                                 prob_fake_is_real=discriminator_results["prob_fake_pool_s_is_real"])
+
+                discriminator_s_aux_loss_real, discriminator_s_aux_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_results["prob_cycle_s_aux_is_real"],
+                                                                 prob_fake_is_real=discriminator_results["prob_fake_pool_s_aux_is_real"])
+
+                pool_discriminator_s_loss = discriminator_s_loss_fake + discriminator_s_aux_loss_fake
+
+                discriminator_s_loss_real.backward()
+                discriminator_s_aux_loss_real.backward()
+                pool_discriminator_s_loss.backward()
+
+                # Step optimizer
+                self.discriminator_s_optimizer.step()
 
 
                 # ----------Optimizing the discriminator pred Network i.e Discriminator_MASK-----------
+
+                #  Set Zero Gradients
+                self.model_generators.zero_grad()
+                self.model_discriminators.zero_grad()
+
                 # Get Loss specific to discriminator_mask and propogate backwards
+                discriminator_p_loss_real, discriminator_p_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_results["prob_pred_mask_fake_t_is_real"],
+                                                                 prob_fake_is_real=discriminator_results["prob_pred_mask_t_is_real"])
+
+                discriminator_p_loss_real.backward()
+                discriminator_p_loss_fake.backward()
+
                 # Step optimizer
+                self.discriminator_p_optimizer.step()
 
 
                 self.num_fake_inputs += 1

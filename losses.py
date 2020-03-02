@@ -18,8 +18,9 @@ def discriminator_loss(prob_real_is_real, prob_fake_is_real):
     """
     Computes the LS-GAN loss as minimized by the discriminator.
     """
-    return (torch.mean((1-prob_real_is_real)**2) +
-            torch.mean((prob_fake_is_real-0)**2)) * 0.5
+
+    return (torch.mean((1-prob_real_is_real)**2)*0.5,
+            torch.mean((prob_fake_is_real-0)**2)*0.5)
 
 
 def _softmax_weighted_loss(logits, gt, num_classes=5):
