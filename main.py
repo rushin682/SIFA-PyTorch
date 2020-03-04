@@ -175,7 +175,7 @@ class UDA:
             # self.save_images(epoch)
 
             for idx, (images_s, images_t, gts_s, gts_t) in enumerate(self.dataloader):
-                # something
+                
                 count += 1
                 print("Processing batch {}".format(idx))
 
