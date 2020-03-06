@@ -1,15 +1,16 @@
 {
-  "source_train_path": "./data/datalist/training_source.txt",
-  "target_train_path": "./data/datalist/training_target.txt",
-  "source_val_path": "./data/datalist/val_source.txt",
-  "target_val_path": "./data/datalist/val_target.txt",
-  "output_dir": "./output",
+  "source_train_path": "data/ct_mr_train/pre_processed/mr_train_processed.csv",
+  "target_train_path": "data/ct_mr_train/pre_processed/ct_train_processed.csv",
+  "source_val_path": "data/ct_mr_train/pre_processed/mr_val_processed.csv",
+  "target_val_path": "data/ct_mr_train/pre_processed/ct_val_processed.csv",
+  "output_root_dir": "./output",
   "pool_size": 50,
   "_LAMBDA_S": 10,
   "_LAMBDA_T": 10,
   "skip_conn": 1,
   "num_cls": 5,
   "base_lr":0.0002,
+  "segmentation_lr": 0.001,
   "epoch": 20,
   "dropout_rate": 0.75,
   "is_training": 1,
@@ -17,5 +18,6 @@
   "lr_gan_decay": 0,
   "lsgan_loss_p_scheduler": 1,
   "to_restore": 0,
-  "checkpoint_dir": " "
+  "checkpoint_dir": " ",
+  "ngpu": 8
 }

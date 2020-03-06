@@ -29,12 +29,7 @@ class CT_MR_Train(Dataset):
                  augment_param=None):
         """
         Args:
-            root_dir:
-            transform:
 
-            Maybe:
-                num_of_files:
-                num_of_slices:
         """
 
         self.root_dir = root_dir
@@ -45,7 +40,9 @@ class CT_MR_Train(Dataset):
         self.images_list = images_list
         self.images_frame = pd.read_csv(os.path.join(self.root_dir, images_list), header=None)
 
-        self.transform = transform
+        self.transform = True
+        self.variable_size = 256
+
         self.normalize = transforms.Normalize((0,), (1,), inplace=False)
 
         self.augment_param = augment_param
@@ -59,24 +56,30 @@ class CT_MR_Train(Dataset):
     def __len__(self):
         """
         len(dataset):
-            returns (the size of the dataset(Source and Target),
-                     the coronal_axis of Source(MR),
-                     the coronal_axis of Target(CT)
+
         """
         dataset_size = len(self.images_frame) # MR-Scans
 
         return dataset_size
 
-    def save_file(self, image, label):
+    def save_file(self, image, label, file_name):
         # save to the disk
         self.count += 1
 
         image_name = "coronal_slice_"+"{:04d}".format(self.count)
         label_name = "coronal_slice_label"+"{:04d}".format(self.count)
 
-        export_dir = os.path.join(self.preprocessed_dir, self.images_list.split('.')[0])
+        export_dir = os.path.join(self.preprocessed_dir, self.images_list.split('.')[0]+"_processed")
         if not os.path.exists(export_dir):
             os.makedirs(export_dir)
+            os.makedirs(os.path.join(export_dir, "slices"))
+            os.makedirs(os.path.join(export_dir, "labels"))
+
+        # image_dir = os.path.join(export_dir, file_name)
+        # if not os.path.exists(image_dir):
+        #     os.makedirs(image_dir)
+        #     os.makedirs(os.path.join(image_dir, "slices"))
+        #     os.makedirs(os.path.join(image_dir, "labels"))
 
         file_name = os.path.join(self.preprocessed_dir, self.images_list.split('.')[0]+"_processed.csv")
 
@@ -88,13 +91,22 @@ class CT_MR_Train(Dataset):
         nii_label = nib.Nifti1Image(label.numpy(), np.eye(4))
 
 
-        nib.save(nii_image, os.path.join(export_dir, image_name+".nii.gz"))
-        nib.save(nii_label, os.path.join(export_dir, label_name+".nii.gz"))
+        nib.save(nii_image, os.path.join(export_dir, "slices", image_name+".nii.gz"))
+        nib.save(nii_label, os.path.join(export_dir, "labels", label_name+".nii.gz"))
 
-        print(image_name)
+
 
 
     def get_shape(self, image, axis):
+
+        if axis==0:
+            self.variable_size = int((image.shape[1] + image.shape[2])/2)
+
+        elif axis==1:
+            self.variable_size = int((image.shape[0] + image.shape[2])/2)
+
+        elif axis==2:
+            self.variable_size = int((image.shape[0] + image.shape[1])/2)
 
         return (image.shape[axis],256,256)
 
@@ -144,13 +156,31 @@ class CT_MR_Train(Dataset):
         return TF.to_tensor(image), TF.to_tensor(label)
 
 
-    def perform_transformations(self, image, label, axis):
+    def perform_transformations(self, image, label, axis, image_name):
         shape = self.get_shape(image, axis)
+
+        if axis==0:
+            first = 80
+            last = 176
+        elif axis==1:
+            first = 146
+            last = 408
+        elif axis==2:
+            first = 24
+            last = 87
 
         tr_image = torch.tensor(()).new_empty(shape)
         tr_label = torch.tensor(()).new_empty(shape)
 
-        for j in range(image.shape[axis]):
+        self.transform = transforms.Compose([
+                    transforms.ToPILImage(mode='I'),
+                    transforms.CenterCrop(size=self.variable_size),
+                    transforms.Resize(size=256),
+                    transforms.ToTensor()
+                    ])
+
+        last = min(last, image.shape[axis])
+        for j in range(first, last):
 
             if axis==0:
                 tr_slice = self.normalize(self.transform(image[j,:,:]))
@@ -163,13 +193,13 @@ class CT_MR_Train(Dataset):
                 tr_slice = self.normalize(self.transform(image[:,:,j]))
                 tr_label_slice = self.transform(label[:,:,j])
 
-            if self.augment_param:
-                tr_slice, tr_label_slice = self.perform_augmentations(tr_slice, tr_label_slice)
+            # if not self.augment_param is None:
+            #     tr_slice, tr_label_slice = self.perform_augmentations(tr_slice, tr_label_slice)
 
             tr_image[j,:,:] = tr_slice
             tr_label[j,:,:] = tr_label_slice
 
-            self.save_file(tr_slice, tr_label_slice)
+            self.save_file(tr_slice, tr_label_slice, image_name)
 
         return tr_image, tr_label
 
@@ -185,14 +215,17 @@ class CT_MR_Train(Dataset):
                                   self.images_path,
                                   self.images_frame.iloc[idx, 1])
 
+
+        image_name = self.images_frame.iloc[idx, 0]
         image = np.int32(nib.load(image_path).get_fdata())
         label = np.int32(nib.load(label_path).get_fdata())
         axis = self.images_frame.iloc[idx, 2]
 
+        print(image.shape)
 
         if self.transform:
-            image, label = self.perform_transformations(image, label, axis)
-
+            image, label = self.perform_transformations(image, label, axis, image_name)
+            print(self.variable_size)
 
         sample = {'image_name': self.images_frame.iloc[idx, 0], 'label_name': self.images_frame.iloc[idx, 1], 'image': image, 'label': label, 'axis': axis}
 
@@ -209,7 +242,7 @@ if __name__ == "__main__":
 
     elif modality=="CT":
         images_path="ct_train"
-        images_list="ct_train.csv"
+        images_list="ct_val.csv"
 
     basic_transforms = transforms.Compose([
                 transforms.ToPILImage(mode='I'),
@@ -224,7 +257,7 @@ if __name__ == "__main__":
 
     basic_augmentations = {'rotation_angle': rotation_angle, 'shift_range': shift_range, 'shear_range': shear_range, 'zoom_range': zoom_range }
 
-    dataset = CT_MR_Train(root_dir,modality,images_path,images_list,transform=basic_transforms, augment_param=None)
+    dataset = CT_MR_Train(root_dir,modality,images_path,images_list,transform=False, augment_param=None)
 
     print("Length of dataset: ", len(dataset))
 
