@@ -48,12 +48,14 @@ class SIFA_generators(nn.Module):
 
     def forward(self, inputs):
         # images_s, images_t
-        images_s = inputs['images_s']
-        images_t = inputs['images_t']
+        images_s = inputs['images_s'].float()
+        images_t = inputs['images_t'].float()
 
+        print("Images s & t", images_s.shape, images_t.shape)
         # ---------- GRAPH 1 GENERATORS---------------------------------------
 
-        fake_images_t = self.generator_s_t(images_s)
+        fake_images_t = self.generator_s_t(torch.cat((images_s, images_s, images_s), 1))
+        print("fake_images_t", fake_images_t.shape)
         latent_fake_t = self.encoder(torch.cat((fake_images_t, fake_images_t, fake_images_t), 1))
 
         pred_mask_fake_t = self.segmenter(latent_fake_t)
@@ -61,10 +63,10 @@ class SIFA_generators(nn.Module):
 
         # ---------- GRAPH 2 GENERATORS---------------------------------------
 
-        latent_t = self.encoder(images_t)
+        latent_t = self.encoder(torch.cat((images_t, images_t, images_t), 1))
 
         pred_mask_t = self.segmenter(latent_t)
-        fake_images_s = self.decoder(latent_t, images_t[:, 1, :, :].unsqueeze(1))
+        fake_images_s = self.decoder(latent_t, images_t.unsqueeze(1))
 
         cycle_images_t = self.generator_s_t(torch.cat((fake_images_s, fake_images_s, fake_images_s), 1))
 
@@ -97,15 +99,15 @@ class SIFA_discriminators(nn.Module):
 
     def forward(self, inputs):
         # images_s, images_t, fake_images_s, fake_images_t, fake_pool_s, fake_pool_t, cycle_images_s, pred_mask_fake_t, pred_mask_t
-        images_s = inputs['images_s']
-        images_t = inputs['images_t']
-        fake_images_s = input['fake_images_s']
-        fake_images_t = input['fake_images_t']
-        fake_pool_s = inputs['fake_pool_s']
-        fake_pool_t = inputs['fake_pool_t']
-        cycle_images_s = inputs['cycle_images_s']
-        pred_mask_fake_t = inputs['pred_mask_fake_t']
-        pred_mask_t = inputs['pred_mask_t']
+        images_s = inputs['images_s'].float()
+        images_t = inputs['images_t'].float()
+        fake_images_s = input['fake_images_s'].float()
+        fake_images_t = input['fake_images_t'].float()
+        fake_pool_s = inputs['fake_pool_s'].float()
+        fake_pool_t = inputs['fake_pool_t'].float()
+        cycle_images_s = inputs['cycle_images_s'].float()
+        pred_mask_fake_t = inputs['pred_mask_fake_t'].float()
+        pred_mask_t = inputs['pred_mask_t'].float()
 
         images_s_dd = images_s.detach()
         images_t_dd = images_t.detach()
@@ -205,11 +207,15 @@ class Generator_S_T(nn.Module):
 
         # Some padding
         padded_input = F.pad(input, (3,3,3,3), mode=self.padding)
+
         # print("Input Shape is: ", padded_input.shape)
+
         output = self.generator(padded_input)
+        # print("output Shape is: ", output.shape)
+        # print("actual input shape", torch.unsqueeze(input[:,1,:,:],1).shape)
 
         if self.skip_conn is True:
-            output = self.tanh(input[:, 1, :, :] + output)
+            output = self.tanh(input[:,1,:,:].unsqueeze(1) + output)
 
         else:
             output = self.tanh(output)
@@ -651,7 +657,7 @@ class Segmenter(nn.Module):
 
         return output
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
     # model = Segmenter(latent_inp_ch = 512, dropout_rate=0.75)
     # summary(model, input_size=(512, 40, 40))
     #

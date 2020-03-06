@@ -1,9 +1,13 @@
 import time
+from datetime import datetime
 import json
 import numpy as np
 import random
 import os
 import cv2
+import csv
+from math import floor
+
 
 import tensorflow as tf
 
@@ -12,16 +16,21 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 import torchvision
-import torchvision.transforms as transforms
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
+from torch._six import int_classes as _int_classes
+from torch.utils.data import DataLoader
+
+import nibabel as nib
 
 from layers import Convolution2D, DilatedConv2D, Deconvolution2D
 from modules import Residual_block, Dilated_Residual_block
-import model.IMG_HEIGHT
-import model.IMG_WIDTH
+import model
 from model import SIFA_generators, SIFA_discriminators, Generator_S_T, Discriminator_T, Discriminator_AUX, Discriminator_MASK, Encoder, Decoder, Segmenter
 from losses import cycle_consistency_loss, generator_loss, discriminator_loss, task_loss
+
+from data_loader import Two_idx_BatchSampler, Two_idx_RandomSampler
+from data_loader import CT_MR_Dataset
 
 from stats_func import *
 
@@ -32,10 +41,10 @@ class UDA:
 
     def __init__(self, config):
         current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
-        self._source_train_pth = config['source_train_pth']
-        self._target_train_pth = config['target_train_pth']
-        self._source_val_pth = config['source_val_pth']
-        self._target_val_pth = config['target_val_pth']
+        self._source_train_pth = config['source_train_path']
+        self._target_train_pth = config['target_train_path']
+        self._source_val_pth = config['source_val_path']
+        self._target_val_pth = config['target_val_path']
         self._output_root_dir = config['output_root_dir']
         if not os.path.isdir(self._output_root_dir):
             os.makedirs(self._output_root_dir)
@@ -49,7 +58,7 @@ class UDA:
         self._skip_conn = bool(config['skip_conn'])
         self._num_cls = int(config['num_cls'])
         self._base_lr = float(config['base_lr'])
-        self._segmentation_lr = float(config['sementation_lr'])
+        self._segmentation_lr = float(config['segmentation_lr'])
         self._num_epoch = int(config['epoch'])
         self._dropout_rate = float(config['dropout_rate'])
         self._is_training = bool(config['is_training'])
@@ -99,8 +108,24 @@ class UDA:
 
         #-------------------- SETTINGS: DATASET BUILDERS
         # Load Dataset from dataloader
-        # self.inputs = data_loader.load_data(self._source_train_pth, self._target_train_pth, True)
-        # self.inputs_val = data_loader.load_data(self._source_val_pth, self._target_val_pth, True)
+
+        augmentations = {'rotation_angle': 15,
+                         'shift_range': [0.3,0.3],
+                         'shear_range': 0.1,
+                         'zoom_range': 1.3 }
+
+        train_dataset = CT_MR_Dataset(self._source_train_pth, self._target_train_pth, augment_param=augmentations)
+        val_dataset = CT_MR_Dataset(self._source_val_pth, self._target_val_pth, augment_param=augmentations)
+
+        # Custom Samplers
+        two_idx_train_sampler = Two_idx_RandomSampler(train_dataset)
+        two_idx_train_batch_sampler = Two_idx_BatchSampler(two_idx_train_sampler, batch_size=self._batch_size, drop_last=False)
+        two_idx_val_sampler = Two_idx_RandomSampler(val_dataset)
+        two_idx_val_batch_sampler = Two_idx_BatchSampler(two_idx_val_sampler, batch_size=1, drop_last=False)
+
+        # Dataloaders
+        self.dataloader_train = DataLoader(train_dataset, batch_sampler=two_idx_train_batch_sampler)
+        self.dataloader_val = DataLoader(val_dataset, batch_sampler=two_idx_val_batch_sampler)
 
 
         #-------------------- SETTINGS: NETWORK ARCHITECTURE
@@ -131,7 +156,9 @@ class UDA:
         self.discriminator_t_optimizer = optim.Adam(self.model_discriminators.discriminator_t.parameters(), lr=curr_lr, betas=(0.5, 0.999))
         self.discriminator_p_optimizer = optim.Adam(self.model_discriminators.discriminator_mask.parameters(), lr=curr_lr, betas=(0.5, 0.999))
 
-        self.segmentation_optimizer = optim.Adam(self.model_generators.encoder.parameters() + self.model_generators.segmenter.parameters(), lr=curr_seg_lr, weight_decay=0.0001)
+        self.segmentation_optimizer = optim.Adam(list(self.model_generators.encoder.parameters())
+                                                 + list(self.model_generators.segmenter.parameters()),
+                                                 lr=curr_seg_lr, weight_decay=0.0001)
 
 
         self.adverserial_scheduler = StepLR(self.segmentation_optimizer, step_size=2, gamma=0.9, last_epoch=-1)
@@ -146,6 +173,9 @@ class UDA:
 
         self.model_generators.train()
         self.model_discriminators.train()
+
+        save_count = -1
+
         for epoch in range(0, self._num_epoch):
 
             print("In the epoch", epoch)
@@ -169,15 +199,18 @@ class UDA:
                         lsgan_loss_p_weight_value = 0.1 * (epoch - 4.0) / (7.0 - 4.0)
                     else:
                         lsgan_loss_p_weight_value = 0.1
-                else:
-                    lsgan_loss_p_weight_value = 0.1
+            else:
+                lsgan_loss_p_weight_value = 0.1
 
             # self.save_images(epoch)
 
-            for idx, (images_s, images_t, gts_s, gts_t) in enumerate(self.dataloader):
-                
-                count += 1
+            for idx, batch_sample in enumerate(self.dataloader_train):
+
+                save_count += 1
                 print("Processing batch {}".format(idx))
+
+                images_s, gts_s = batch_sample['image_source'], batch_sample['gt_source']
+                images_t, gts_t = batch_sample['image_target'], batch_sample['gt_target']
 
                 # Executing each network with the current resources
                 images_s = images_s.to(device)
@@ -185,7 +218,7 @@ class UDA:
                 gts_s = gts_s.to(device)
                 gts_t = gts_t.to(device)
 
-                generated_images = self.model_generators(input = {"images_s": images_s, "images_t": images_t})
+                generated_images = self.model_generators(inputs = {"images_s": images_s, "images_t": images_t})
 
                 # Adding all the synthesized images | fake images to a list for discriminator networks
                 generated_images["fake_pool_t"] = self.fake_image_pool(self.num_fake_inputs, generated_images["fake_images_t"], self.fake_images_t)
@@ -352,4 +385,4 @@ def main(config_filename):
 
 
 if __name__ == '__main__':
-    main(config_filename='./config_param.json')
+    main(config_filename='./config.json')
