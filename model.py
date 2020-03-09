@@ -66,7 +66,7 @@ class SIFA_generators(nn.Module):
         latent_t = self.encoder(torch.cat((images_t, images_t, images_t), 1))
 
         pred_mask_t = self.segmenter(latent_t)
-        fake_images_s = self.decoder(latent_t, images_t.unsqueeze(1))
+        fake_images_s = self.decoder(latent_t, images_t)
 
         cycle_images_t = self.generator_s_t(torch.cat((fake_images_s, fake_images_s, fake_images_s), 1))
 
@@ -74,6 +74,8 @@ class SIFA_generators(nn.Module):
 
 
         return {
+            'images_s': images_s,
+            'images_t': images_t,
             'fake_images_s': fake_images_s,
             'fake_images_t': fake_images_t,
             'cycle_images_s': cycle_images_s,
@@ -101,8 +103,8 @@ class SIFA_discriminators(nn.Module):
         # images_s, images_t, fake_images_s, fake_images_t, fake_pool_s, fake_pool_t, cycle_images_s, pred_mask_fake_t, pred_mask_t
         images_s = inputs['images_s'].float()
         images_t = inputs['images_t'].float()
-        fake_images_s = input['fake_images_s'].float()
-        fake_images_t = input['fake_images_t'].float()
+        fake_images_s = inputs['fake_images_s'].float()
+        fake_images_t = inputs['fake_images_t'].float()
         fake_pool_s = inputs['fake_pool_s'].float()
         fake_pool_t = inputs['fake_pool_t'].float()
         cycle_images_s = inputs['cycle_images_s'].float()
@@ -111,8 +113,8 @@ class SIFA_discriminators(nn.Module):
 
         images_s_dd = images_s.detach()
         images_t_dd = images_t.detach()
-        prob_real_s_is_real, prob_real_s_aux = self.discriminator_aux(images_s_dd[:, 1, :, :].unsqueeze(1))
-        prob_real_t_is_real = self.discriminator_t(images_t_dd[:, 1, :, :].unsqueeze(1))
+        prob_real_s_is_real, prob_real_s_aux = self.discriminator_aux(images_s_dd)
+        prob_real_t_is_real = self.discriminator_t(images_t_dd)
 
         prob_fake_s_is_real, prob_fake_s_aux_is_real = self.discriminator_aux(fake_images_s)
         prob_fake_t_is_real = self.discriminator_t(fake_images_t)

@@ -7,6 +7,7 @@ import numpy as np
 import random
 import csv
 from math import floor
+from PIL import Image
 
 from torch._six import int_classes as _int_classes
 from torch.utils.data import Dataset, DataLoader, Sampler
@@ -114,6 +115,8 @@ class CT_MR_Dataset(Dataset):
         self.transform = True if not augment_param is None else False
         self.augment_param = augment_param
 
+        self.num_classes = 5
+
 
     def __len__(self):
         """
@@ -138,8 +141,8 @@ class CT_MR_Dataset(Dataset):
 
     def _decode_samples(self, image_path, label_path):
 
-        image = np.int32(nib.load(image_path+".nii.gz").get_fdata())
-        label = np.int32(nib.load(label_path+".nii.gz").get_fdata())
+        image = torch.IntTensor(nib.load(image_path+".nii.gz").get_fdata())
+        label = torch.IntTensor(nib.load(label_path+".nii.gz").get_fdata())
 
         return image, label
 
@@ -158,8 +161,8 @@ class CT_MR_Dataset(Dataset):
         return source_img, target_img, source_label, target_label
 
     def augmentations(self, image, label):
-        image = TF.to_pil_image(np.squeeze(image), mode='I')
-        label = TF.to_pil_image(np.squeeze(label), mode='I')
+        image = TF.to_pil_image(image.squeeze())
+        label = TF.to_pil_image(label.squeeze())
 
         angle = self.augment_param['rotation_angle']
         shift = self.augment_param['shift_range']
@@ -182,7 +185,7 @@ class CT_MR_Dataset(Dataset):
                 w, h = img.size
 
                 img_zoomed = TF.resize(img, (int(round(img.size[0] * factor)),
-                                             int(round(img.size[1] * factor))))
+                                             int(round(img.size[1] * factor))), interpolation=Image.NEAREST)
                 w_zoomed, h_zoomed = img_zoomed.size
 
                 return TF.center_crop(img_zoomed, 256)
@@ -205,22 +208,42 @@ class CT_MR_Dataset(Dataset):
             image = TF.affine(image, rotation, translate, scale, shear)
             label = TF.affine(label, rotation, translate, scale, shear)
 
+        image = TF.normalize(TF.to_tensor(image), mean=(0,), std=(1,))
+        label = TF.to_tensor(label)
 
+        return image, label
 
-        return TF.to_tensor(image), TF.to_tensor(label)
+    def one_hot(self, gt):
+        C = 5
+        gt_extended=gt.clone().type(torch.long)
+
+        intensities = [0, 205, 420, 500, 820] # intensities = gt_extended.unique().numpy()
+        mapping = {c: t for c, t in zip(intensities, range(len(intensities)))}
+
+        mask = torch.zeros(256, 256, dtype=torch.long).unsqueeze(0)
+        for k in mapping:
+            # Get all indices for current class
+            idx = (gt_extended==torch.tensor(k, dtype=torch.long))
+            mask[idx] = torch.tensor(mapping[k], dtype=torch.long)
+
+        # print("Mask Shape", mask.shape)
+        # print("Mask Unique", mask.unique())
+
+        one_hot = torch.FloatTensor(C, gt_extended.size(1), gt_extended.size(2)).zero_()
+        one_hot.scatter_(0, mask, 1)
+        return one_hot
 
 
     def __getitem__(self, idxs):
-
-
-        # This will be basic custom sampler design
-        # There will be a sampler with shuffle=True
 
         image_source, image_target, gt_source, gt_target = self._load_samples(idxs)
 
         if self.transform:
             image_source, gt_source = self.augmentations(image_source, gt_source)
             image_target, gt_target = self.augmentations(image_target, gt_target)
+
+        gt_source = self.one_hot(gt_source)
+        gt_target = self.one_hot(gt_target)
 
         sample = {'image_source': image_source, 'gt_source': gt_source, 'image_target': image_target, 'gt_target': gt_target}
 
@@ -248,19 +271,14 @@ if __name__ == "__main__":
 
     print("Length of dataset: ", dataset._length_())
 
-    # sample = dataset[(2,4)]
-    # image_source = sample['image_source']
-    # gt_source = sample['gt_source']
     two_idx_sampler = Two_idx_RandomSampler(dataset)
-    two_idx_batch_sampler = Two_idx_BatchSampler(two_idx_sampler, batch_size=8, drop_last=False)
+    two_idx_batch_sampler = Two_idx_BatchSampler(two_idx_sampler, batch_size=1, drop_last=False)
 
     dataloader = DataLoader(dataset, batch_sampler=two_idx_batch_sampler)
 
     for i_batch, sample_batched in enumerate(dataloader):
         print(i_batch,"/",len(two_idx_batch_sampler))
 
-        print("Source_image: ", sample_batched['image_source'].shape)
-        print("source_label: ", sample_batched['gt_source'].shape)
+        # print("Source_image: ", sample_batched['image_source'].shape)
+        # print("source_label: ", sample_batched['gt_source'].shape)
         # print("Target_image: ", sample_batched['image_target'].shape)
-
-    # print("Shapes: ", image_source.shape, gt_source.shape)

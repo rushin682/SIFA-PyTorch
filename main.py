@@ -27,7 +27,7 @@ from layers import Convolution2D, DilatedConv2D, Deconvolution2D
 from modules import Residual_block, Dilated_Residual_block
 import model
 from model import SIFA_generators, SIFA_discriminators, Generator_S_T, Discriminator_T, Discriminator_AUX, Discriminator_MASK, Encoder, Decoder, Segmenter
-from losses import cycle_consistency_loss, generator_loss, discriminator_loss, task_loss
+import losses
 
 from data_loader import Two_idx_BatchSampler, Two_idx_RandomSampler
 from data_loader import CT_MR_Dataset
@@ -71,9 +71,9 @@ class UDA:
         self.nGPU = config['ngpu']
 
         self.fake_images_s = np.zeros(
-            (self._pool_size, self._batch_size, model.IMG_HEIGHT, model.IMG_WIDTH, 1))
+            (self._pool_size, self._batch_size, 1, model.IMG_HEIGHT, model.IMG_WIDTH))
         self.fake_images_t = np.zeros(
-            (self._pool_size, self._batch_size, model.IMG_HEIGHT, model.IMG_WIDTH, 1))
+            (self._pool_size, self._batch_size, 1, model.IMG_HEIGHT, model.IMG_WIDTH))
 
     # '''
     # def save_images(self, epoch):
@@ -89,18 +89,26 @@ class UDA:
     #
     def fake_image_pool(self, num_fakes, fake, fake_pool):
         if num_fakes < self._pool_size:
-            fake_pool[num_fakes] = fake
+            fake_pool[num_fakes] = fake.detach()
             return fake
         else:
             p = random.random()
             if p > 0.5:
                 random_id = random.randint(0, self._pool_size - 1)
                 temp = fake_pool[random_id]
-                fake_pool[random_id] = fake
+                fake_pool[random_id] = fake.detach()
                 return temp
             else:
                 return fake
 
+    def one_hot(self, gt):
+        C = self._num_cls
+        gt_extended=gt.clone().type(torch.LongTensor)
+        # gt_extended.unsqueeze_(1) # convert to Nx1xHxW
+        print("Now", gt_extended.shape)
+        one_hot = torch.FloatTensor(gt_extended.size(0), C, gt_extended.size(2), gt_extended.size(3)).zero_()
+        one_hot.scatter_(1, gt_extended, 1)
+        return one_hot
 
     def train(self):
 
@@ -213,10 +221,15 @@ class UDA:
                 images_t, gts_t = batch_sample['image_target'], batch_sample['gt_target']
 
                 # Executing each network with the current resources
-                images_s = images_s.to(device)
-                images_t = images_t.to(device)
-                gts_s = gts_s.to(device)
-                gts_t = gts_t.to(device)
+                images_s = images_s.float().to(device)
+                images_t = images_t.float().to(device)
+
+                print("gt shapes before: ", gts_s.shape, gts_t.shape)
+
+                gts_s = self.one_hot(gts_s.float().to(device))
+                gts_t = self.one_hot(gts_t.float().to(device))
+
+                print("GT shapes after one_hot: ", gts_s.shape, gts_t.shape)
 
                 generated_images = self.model_generators(inputs = {"images_s": images_s, "images_t": images_t})
 
@@ -236,13 +249,13 @@ class UDA:
                 # Get Loss specific to generator_s_t and propogate backwards
                 cycle_consistency_loss_s = \
                     self._lambda_s * losses.cycle_consistency_loss(
-                        real_images=images_s[:,1,:,:].unsqueeze(1),
+                        real_images=images_s,
                         generated_images=generated_images["cycle_images_s"]
                 )
 
                 cycle_consistency_loss_t = \
                     self._lambda_t * losses.cycle_consistency_loss(
-                        real_images=self.images_t[:,1,:,:].unsqueeze(1),
+                        real_images=images_t,
                         generated_images=generated_images["cycle_images_t"]
                 )
 
@@ -286,7 +299,7 @@ class UDA:
 
                 # Get Loss specific to Segmentation and propogate backwards
 
-                ce_loss_t, dice_loss_t = losses.task_loss(generated_images["pred_mask_fake_b"], gts_s)
+                ce_loss_t, dice_loss_t = losses.task_loss(generated_images["pred_mask_fake_t"], gts_s)
 
                 lsgan_loss_s = losses.generator_loss(discriminator_results["prob_fake_s_is_real"])
                 g1_generator_t_s_loss = cycle_consistency_loss_s

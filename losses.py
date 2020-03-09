@@ -33,7 +33,7 @@ def _softmax_weighted_loss(logits, gt, num_classes=5):
     softmaxpred = softmax(logits)
     '''questionanble'''
 
-    for i in xrange(num_classes):
+    for i in range(num_classes):
         gti = gt[:,i,:,:]
         predi = softmaxpred[:,i,:,:]
         weighted = 1-(torch.sum(gti) / torch.sum(gt))
@@ -67,7 +67,7 @@ def _dice_loss(logits, gt, num_classes=5):
     return 1 - 1.0 * dice / 5
 
 
-def task_loss(prediction, g, num_classes=5):
+def task_loss(prediction, gt, num_classes=5):
     """
     Calculate task loss, which consists of the weighted cross entropy loss and dice loss
     """

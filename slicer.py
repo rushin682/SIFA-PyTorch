@@ -6,6 +6,7 @@ from skimage import io, transform
 import numpy as np
 import random
 import csv
+from PIL import Image
 
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
@@ -43,8 +44,6 @@ class CT_MR_Train(Dataset):
         self.transform = True
         self.variable_size = 256
 
-        self.normalize = transforms.Normalize((0,), (1,), inplace=False)
-
         self.augment_param = augment_param
         self.count = 0
 
@@ -62,7 +61,7 @@ class CT_MR_Train(Dataset):
 
         return dataset_size
 
-    def save_file(self, image, label, file_name):
+    def save_file(self, image, label):
         # save to the disk
         self.count += 1
 
@@ -74,12 +73,6 @@ class CT_MR_Train(Dataset):
             os.makedirs(export_dir)
             os.makedirs(os.path.join(export_dir, "slices"))
             os.makedirs(os.path.join(export_dir, "labels"))
-
-        # image_dir = os.path.join(export_dir, file_name)
-        # if not os.path.exists(image_dir):
-        #     os.makedirs(image_dir)
-        #     os.makedirs(os.path.join(image_dir, "slices"))
-        #     os.makedirs(os.path.join(image_dir, "labels"))
 
         file_name = os.path.join(self.preprocessed_dir, self.images_list.split('.')[0]+"_processed.csv")
 
@@ -111,52 +104,7 @@ class CT_MR_Train(Dataset):
         return (image.shape[axis],256,256)
 
 
-    def perform_augmentations(self, image, label):
-
-        image = TF.to_pil_image(image, mode='I')
-        label = TF.to_pil_image(label, mode='I')
-
-        angle = self.augment_param['rotation_angle']
-        shift = self.augment_param['shift_range']
-        shear = self.augment_param['shear_range']
-        zoom = self.augment_param['zoom_range']
-
-        # Random rotation
-        if random.random() > 0.5:
-            rotation = random.randint(-angle, angle)
-            image = TF.rotate(image, rotation)
-            label = TF.rotate(label, rotation)
-
-        # Random Scale/Zoom
-        if random.random() > 0.5:
-            scale = random.uniform(1, zoom) if zoom > 1 else 1
-            size = -128*(scale) + 384
-            image = TF.center_crop(image, size)
-            image = TF.resize(image, 256)
-
-            label = TF.center_crop(label, size)
-            label = TF.resize(label, 256)
-
-
-        # Random affine transform
-        if random.random() > 0.5:
-            rotation = random.randint(-angle, angle) if angle > 0 else 0
-
-            shift_x = random.uniform(-shift[0], shift[0]) if shift[0] > 0 else 0
-            shift_y = random.uniform(-shift[1], shift[1]) if shift[1] > 0 else 0
-            translate = (shift_x, shift_y)
-
-            shear = random.uniform(-shear, shear) if shear > 0 else 0
-            scale = zoom
-
-            image = TF.affine(image, rotation, translate, scale, shear)
-            label = TF.affine(label, rotation, translate, scale, shear)
-
-
-        return TF.to_tensor(image), TF.to_tensor(label)
-
-
-    def perform_transformations(self, image, label, axis, image_name):
+    def perform_transformations(self, image, label, axis):
         shape = self.get_shape(image, axis)
 
         if axis==0:
@@ -169,15 +117,17 @@ class CT_MR_Train(Dataset):
             first = 24
             last = 87
 
-        tr_image = torch.tensor(()).new_empty(shape)
-        tr_label = torch.tensor(()).new_empty(shape)
+        tr_image = torch.IntTensor(()).new_empty(shape)
+        tr_label = torch.IntTensor(()).new_empty(shape)
 
         self.transform = transforms.Compose([
-                    transforms.ToPILImage(mode='I'),
+                    transforms.ToPILImage(),
                     transforms.CenterCrop(size=self.variable_size),
-                    transforms.Resize(size=256),
+                    transforms.Resize(size=256, interpolation=Image.NEAREST),
                     transforms.ToTensor()
                     ])
+
+        self.normalize = transforms.Normalize((0,), (1,), inplace=False)
 
         last = min(last, image.shape[axis])
         for j in range(first, last):
@@ -193,13 +143,11 @@ class CT_MR_Train(Dataset):
                 tr_slice = self.normalize(self.transform(image[:,:,j]))
                 tr_label_slice = self.transform(label[:,:,j])
 
-            # if not self.augment_param is None:
-            #     tr_slice, tr_label_slice = self.perform_augmentations(tr_slice, tr_label_slice)
 
             tr_image[j,:,:] = tr_slice
             tr_label[j,:,:] = tr_label_slice
 
-            self.save_file(tr_slice, tr_label_slice, image_name)
+            self.save_file(tr_slice, tr_label_slice)
 
         return tr_image, tr_label
 
@@ -216,18 +164,18 @@ class CT_MR_Train(Dataset):
                                   self.images_frame.iloc[idx, 1])
 
 
-        image_name = self.images_frame.iloc[idx, 0]
-        image = np.int32(nib.load(image_path).get_fdata())
-        label = np.int32(nib.load(label_path).get_fdata())
+        image = torch.IntTensor(nib.load(image_path).get_fdata())
+        label = torch.IntTensor(nib.load(label_path).get_fdata())
         axis = self.images_frame.iloc[idx, 2]
+
+        # print(label.unique()) # Got my lead. I have to back track from here. Thank You
 
         print(image.shape)
 
         if self.transform:
-            image, label = self.perform_transformations(image, label, axis, image_name)
-            print(self.variable_size)
+            image, label = self.perform_transformations(image, label, axis)
 
-        sample = {'image_name': self.images_frame.iloc[idx, 0], 'label_name': self.images_frame.iloc[idx, 1], 'image': image, 'label': label, 'axis': axis}
+        sample = {'image': image, 'label': label, 'axis': axis}
 
         return sample
 
@@ -238,28 +186,16 @@ if __name__ == "__main__":
     modality = "CT"
     if modality=="MR":
         images_path="mr_train"
-        images_list="mr_train.csv"
+        images_list="mr_val.csv"
 
     elif modality=="CT":
         images_path="ct_train"
         images_list="ct_val.csv"
 
-    basic_transforms = transforms.Compose([
-                transforms.ToPILImage(mode='I'),
-                transforms.CenterCrop(size=256),
-                transforms.ToTensor()
-                ])
-
-    rotation_angle = 15
-    shift_range = [0.3,0.3]
-    shear_range = 0.1
-    zoom_range = 1.3
-
-    basic_augmentations = {'rotation_angle': rotation_angle, 'shift_range': shift_range, 'shear_range': shear_range, 'zoom_range': zoom_range }
-
     dataset = CT_MR_Train(root_dir,modality,images_path,images_list,transform=False, augment_param=None)
 
     print("Length of dataset: ", len(dataset))
+
 
     for i in range(len(dataset)):
         sample = dataset[i]
