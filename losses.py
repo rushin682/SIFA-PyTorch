@@ -58,7 +58,7 @@ def _dice_loss(logits, gt, num_classes=5):
     softmaxpred = softmax(logits)
     '''questionanble'''
 
-    for i in xrange(num_classes):
+    for i in range(num_classes):
         inse = torch.sum(softmaxpred[:, i, :, :]*gt[:, i, :, :])
         l = torch.sum(softmaxpred[:, i, :, :]*softmaxpred[:, i, :, :])
         r = torch.sum(gt[:, i, :, :])

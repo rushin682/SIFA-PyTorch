@@ -101,14 +101,6 @@ class UDA:
             else:
                 return fake
 
-    def one_hot(self, gt):
-        C = self._num_cls
-        gt_extended=gt.clone().type(torch.LongTensor)
-        # gt_extended.unsqueeze_(1) # convert to Nx1xHxW
-        print("Now", gt_extended.shape)
-        one_hot = torch.FloatTensor(gt_extended.size(0), C, gt_extended.size(2), gt_extended.size(3)).zero_()
-        one_hot.scatter_(1, gt_extended, 1)
-        return one_hot
 
     def train(self):
 
@@ -224,13 +216,6 @@ class UDA:
                 images_s = images_s.float().to(device)
                 images_t = images_t.float().to(device)
 
-                print("gt shapes before: ", gts_s.shape, gts_t.shape)
-
-                gts_s = self.one_hot(gts_s.float().to(device))
-                gts_t = self.one_hot(gts_t.float().to(device))
-
-                print("GT shapes after one_hot: ", gts_s.shape, gts_t.shape)
-
                 generated_images = self.model_generators(inputs = {"images_s": images_s, "images_t": images_t})
 
                 # Adding all the synthesized images | fake images to a list for discriminator networks
@@ -308,7 +293,10 @@ class UDA:
                 g1_segmentation_t_loss = ce_loss_t + dice_loss_t + 0.1*g1_generator_t_s_loss
                 g1_segmentation_t_loss.backward(retain_graph=True)
 
-                g2_segmentation_t_loss = 0.1*g2_generator_t_s_loss + lsgan_loss_p_weight_value*lsgan_loss_p + 0.1*lsgan_loss_a_aux
+                lsgan_loss_p = losses.generator_loss(discriminator_results["prob_pred_mask_t_is_real"])
+                lsgan_loss_s_aux = losses.generator_loss(discriminator_results["prob_fake_s_aux_is_real"])
+
+                g2_segmentation_t_loss = 0.1*g2_generator_t_s_loss + lsgan_loss_p_weight_value*lsgan_loss_p + 0.1*lsgan_loss_s_aux
                 g2_segmentation_t_loss.backward(retain_graph=True)
 
                 # Step optimizer
