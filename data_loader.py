@@ -272,9 +272,9 @@ if __name__ == "__main__":
     print("Length of dataset: ", dataset._length_())
 
     two_idx_sampler = Two_idx_RandomSampler(dataset)
-    two_idx_batch_sampler = Two_idx_BatchSampler(two_idx_sampler, batch_size=1, drop_last=False)
+    two_idx_batch_sampler = Two_idx_BatchSampler(two_idx_sampler, batch_size=8, drop_last=False)
 
-    dataloader = DataLoader(dataset, batch_sampler=two_idx_batch_sampler)
+    dataloader = DataLoader(dataset, batch_sampler=two_idx_batch_sampler, num_workers=4)
 
     for i_batch, sample_batched in enumerate(dataloader):
         print(i_batch,"/",len(two_idx_batch_sampler))

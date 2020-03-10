@@ -19,5 +19,7 @@
   "lsgan_loss_p_scheduler": 1,
   "to_restore": 0,
   "checkpoint_dir": " ",
-  "ngpu": 8
+  "ngpu": 8,
+  "print_frequency": 10,
+  "save_epoch_freq": 5
 }
