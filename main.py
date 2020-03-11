@@ -67,18 +67,18 @@ class UDA:
         self.print_freq = config['print_frequency']
         self.save_epoch_freq = config['save_epoch_freq']
 
-        self.nGPU = config['ngpu']
+        self.ngpu = config['ngpu']
 
         # (pool_size, batch_size=8, channel=1, h, w)
-        self.fake_images_s = np.zeros(
+        self.fake_images_s = torch.zeros(
             (self._pool_size, self._batch_size, 1, model.IMG_HEIGHT, model.IMG_WIDTH))
-        self.fake_images_t = np.zeros(
+        self.fake_images_t = torch.zeros(
             (self._pool_size, self._batch_size, 1, model.IMG_HEIGHT, model.IMG_WIDTH))
 
         # (pool_size, batch_size=1, channel=1, h, w)
-        self.fake_val_images_s = np.zeros(
+        self.fake_val_images_s = torch.zeros(
             (self._pool_size, 1, 1, model.IMG_HEIGHT, model.IMG_WIDTH))
-        self.fake_val_images_t = np.zeros(
+        self.fake_val_images_t = torch.zeros(
             (self._pool_size, 1, 1, model.IMG_HEIGHT, model.IMG_WIDTH))
 
     # '''
@@ -110,8 +110,6 @@ class UDA:
 
     def train(self):
 
-        device = torch.device("cuda:0" if (torch.cuda.is_available() and self.ngpu > 0) else "cpu")
-
         #-------------------- SETTINGS: DATASET BUILDERS
         # Load Dataset from dataloader
 
@@ -120,31 +118,32 @@ class UDA:
                          'shear_range': 0.1,
                          'zoom_range': 1.3 }
 
-        train_dataset = CT_MR_Dataset(self._source_train_pth, self._target_train_pth, augment_param=augmentations)
-        val_dataset = CT_MR_Dataset(self._source_val_pth, self._target_val_pth, augment_param=augmentations)
+        train_dataset = CT_MR_Dataset(self._source_train_pth, self._target_train_pth, augment_param=None)
+        val_dataset = CT_MR_Dataset(self._source_val_pth, self._target_val_pth, augment_param=None)
 
         # Custom Samplers
         two_idx_train_sampler = Two_idx_RandomSampler(train_dataset)
-        two_idx_train_batch_sampler = Two_idx_BatchSampler(two_idx_train_sampler, batch_size=self._batch_size, drop_last=False)
+        two_idx_train_batch_sampler = Two_idx_BatchSampler(two_idx_train_sampler, batch_size=self._batch_size, drop_last=True)
         two_idx_val_sampler = Two_idx_RandomSampler(val_dataset)
-        two_idx_val_batch_sampler = Two_idx_BatchSampler(two_idx_val_sampler, batch_size=1, drop_last=False)
+        two_idx_val_batch_sampler = Two_idx_BatchSampler(two_idx_val_sampler, batch_size=1, drop_last=True)
 
         # Dataloaders
-        self.dataloader_train = DataLoader(train_dataset, batch_sampler=two_idx_train_batch_sampler)
-        self.dataloader_val = DataLoader(val_dataset, batch_sampler=two_idx_val_batch_sampler)
+        self.dataloader_train = DataLoader(train_dataset, batch_sampler=two_idx_train_batch_sampler, num_workers=4)
+        self.dataloader_val = DataLoader(val_dataset, batch_sampler=two_idx_val_batch_sampler, num_workers=4)
 
 
         #-------------------- SETTINGS: NETWORK ARCHITECTURE
         self.model_generators = SIFA_generators(skip_conn=self._skip_conn, is_training=self._is_training, dropout_rate=self._dropout_rate)
-        self.model_generators = self.model_generators.to(device)
-
         self.model_discriminators = SIFA_discriminators()
-        self.model_discriminators = self.model_discriminators.to(device)
+
+        device = torch.device("cuda:0" if (torch.cuda.is_available() and self.ngpu > 0) else "cpu")
 
         if (device.type == 'cuda') and (self.ngpu > 1):
             self.model_generators = nn.DataParallel(self.model_generators, list(range(self.ngpu)))
             self.model_discriminators = nn.DataParallel(self.model_discriminators, list(range(self.ngpu)))
 
+        self.model_generators = self.model_generators.to(device)
+        self.model_discriminators = self.model_discriminators.to(device)
 
         # Restore model to run from last checkpoint
         # if self._to_restore:
@@ -155,20 +154,19 @@ class UDA:
         curr_lr = self._base_lr
         curr_seg_lr = self._segmentation_lr
 
-        self.generator_s_t_optimizer = optim.Adam(self.model_generators.generator_s_t.parameters(), lr=curr_lr, betas=(0.5, 0.999))
-        self.generator_t_s_optimizer = optim.Adam(self.model_generators.decoder.parameters(), lr=curr_lr, betas=(0.5, 0.999))
+        self.generator_s_t_optimizer = optim.Adam(self.model_generators.module.generator_s_t.parameters(), lr=curr_lr, betas=(0.5, 0.999))
+        self.generator_t_s_optimizer = optim.Adam(self.model_generators.module.decoder.parameters(), lr=curr_lr, betas=(0.5, 0.999))
 
-        self.discriminator_s_optimizer = optim.Adam(self.model_discriminators.discriminator_aux.parameters(), lr=curr_lr, betas=(0.5, 0.999))
-        self.discriminator_t_optimizer = optim.Adam(self.model_discriminators.discriminator_t.parameters(), lr=curr_lr, betas=(0.5, 0.999))
-        self.discriminator_p_optimizer = optim.Adam(self.model_discriminators.discriminator_mask.parameters(), lr=curr_lr, betas=(0.5, 0.999))
+        self.discriminator_s_optimizer = optim.Adam(self.model_discriminators.module.discriminator_aux.parameters(), lr=curr_lr, betas=(0.5, 0.999))
+        self.discriminator_t_optimizer = optim.Adam(self.model_discriminators.module.discriminator_t.parameters(), lr=curr_lr, betas=(0.5, 0.999))
+        self.discriminator_p_optimizer = optim.Adam(self.model_discriminators.module.discriminator_mask.parameters(), lr=curr_lr, betas=(0.5, 0.999))
 
-        self.segmentation_optimizer = optim.Adam(list(self.model_generators.encoder.parameters())
-                                                 + list(self.model_generators.segmenter.parameters()),
+        self.segmentation_optimizer = optim.Adam(list(self.model_generators.module.encoder.parameters())
+                                                 + list(self.model_generators.module.segmenter.parameters()),
                                                  lr=curr_seg_lr, weight_decay=0.0001)
 
 
         self.adverserial_scheduler = StepLR(self.segmentation_optimizer, step_size=2, gamma=0.9, last_epoch=-1)
-
 
         # -------------------- TENSORBOARD STUFF
         writer = SummaryWriter(comment="BATCH_08")
@@ -182,9 +180,6 @@ class UDA:
         self.num_fake_inputs = 0
         self.num_fake_val_inputs = 0
         # self.max_images = something
-
-        self.model_generators.train()
-        self.model_discriminators.train()
 
         save_count = -1
         total_iter = 0
@@ -223,6 +218,8 @@ class UDA:
 
             # self.save_images(epoch)
             # Train Loop
+            self.model_generators.train()
+            self.model_discriminators.train()
             
             for idx, batch_sample in enumerate(self.dataloader_train):
 
@@ -231,7 +228,7 @@ class UDA:
 
                 save_count += 1
 
-                print("Processing batch {}".format(idx))
+                # print("Processing batch {}".format(idx))
 
                 images_s, gts_s = batch_sample['image_source'], batch_sample['gt_source']
                 images_t, gts_t = batch_sample['image_target'], batch_sample['gt_target']
@@ -239,7 +236,8 @@ class UDA:
                 # Executing each network with the current resources
                 images_s = images_s.float().to(device)
                 images_t = images_t.float().to(device)
-
+                gts_s = gts_s.to(device)
+                gts_t = gts_t.to(device)
                 generated_images = self.model_generators(inputs = {"images_s": images_s, "images_t": images_t})
 
                 # Adding all the synthesized images | fake images to a list for discriminator networks
@@ -247,8 +245,11 @@ class UDA:
                 generated_images["fake_pool_s"] = self.fake_image_pool(self.num_fake_inputs, generated_images["fake_images_s"], self.fake_images_s)
                 self.num_fake_inputs += 1
 
-                discriminator_results = self.model_discriminators(generated_images)
+                # print(generated_images["fake_pool_t"].get_device())
 
+                discriminator_results = self.model_discriminators(generated_images)
+                # print(discriminator_results["prob_pred_mask_fake_t_is_real"].get_device())
+                print("Where is model at? : ", self.model_generators.get_device(), self.model_discriminators.get_device())
                 # ----------Optimizing the Generator_S_T Network-----------
 
                 # Set Zero Gradients
@@ -395,12 +396,14 @@ class UDA:
 
                 if total_iter % self.print_freq == 0:
                     print(f'[train] epoch {epoch:02d}, iter {epoch_iter:03d}/{num_iter_per_epoch}')
-                    if opt.tensorboard:
-                        for k in all_losses:
-                            writer.add_scalar(f'train/loss/{k}', all_losses[k], total_iter)
+                    for k in all_losses:
+                        writer.add_scalar(f'train/loss/{k}', all_losses[k], total_iter)
 
                 ##########################################################################################################################################################
             # Val Loop
+
+            self.model_generators.eval()
+            self.model_discriminators.eval()
 
             for idx, batch_sample in enumerate(self.dataloader_val):
 
@@ -408,7 +411,7 @@ class UDA:
                 total_val_iter += 1
 
                 save_count += 1
-                print("Processing val batch {}".format(idx))
+                # print("Processing val batch {}".format(idx))
 
                 val_images_s, val_gts_s = batch_sample['image_source'], batch_sample['gt_source']
                 val_images_t, val_gts_t = batch_sample['image_target'], batch_sample['gt_target']
@@ -416,6 +419,8 @@ class UDA:
                 # Executing each network with the current resources
                 val_images_s = val_images_s.float().to(device)
                 val_images_t = val_images_t.float().to(device)
+                val_gts_s = val_gts_s.to(device)
+                val_gts_t = val_gts_t.to(device)
 
                 generated_val_images = self.model_generators(inputs = {"images_s": val_images_s, "images_t": val_images_t})
 
@@ -431,17 +436,17 @@ class UDA:
                 # Get Loss specific to generator_s_t
                 cycle_consistency_loss_s = \
                     self._lambda_s * losses.cycle_consistency_loss(
-                        real_images=val_images_s,
-                        generated_images=generated_val_images["cycle_images_s"]
+                        real_images=val_images_s.detach(),
+                        generated_images=generated_val_images["cycle_images_s"].detach()
                 )
 
                 cycle_consistency_loss_t = \
                     self._lambda_t * losses.cycle_consistency_loss(
-                        real_images=val_images_t,
-                        generated_images=generated_val_images["cycle_images_t"]
+                        real_images=val_images_t.detach(),
+                        generated_images=generated_val_images["cycle_images_t"].detach()
                 )
 
-                lsgan_loss_t = losses.generator_loss(discriminator_val_results["prob_fake_t_is_real"])
+                lsgan_loss_t = losses.generator_loss(discriminator_val_results["prob_fake_t_is_real"].detach())
 
                 g1_generator_s_t_loss = cycle_consistency_loss_s + lsgan_loss_t
                 g2_generator_s_t_loss = cycle_consistency_loss_t
@@ -451,23 +456,24 @@ class UDA:
 
                 # ----------The Discriminator_T Network-----------
 
-                discriminator_t_loss_real, discriminator_t_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_val_results["prob_real_t_is_real"],
-                                                                 prob_fake_is_real=discriminator_val_results["prob_fake_pool_t_is_real"])
+                discriminator_t_loss_real, discriminator_t_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_val_results["prob_real_t_is_real"].detach(),
+                                                                 prob_fake_is_real=discriminator_val_results["prob_fake_pool_t_is_real"].detach())
 
+                all_losses["discriminator_t_loss"] = discriminator_t_loss_real + discriminator_t_loss_fake
                 # ----------The Segmentation Network i.e E + C-----------
 
                 # Get Loss specific to Segmentation
 
-                ce_loss_t, dice_loss_t = losses.task_loss(generated_val_images["pred_mask_fake_t"], val_gts_s)
+                ce_loss_t, dice_loss_t = losses.task_loss(generated_val_images["pred_mask_fake_t"].detach(), val_gts_s.detach())
 
-                lsgan_loss_s = losses.generator_loss(discriminator_val_results["prob_fake_s_is_real"])
+                lsgan_loss_s = losses.generator_loss(discriminator_val_results["prob_fake_s_is_real"].detach())
                 g1_generator_t_s_loss = cycle_consistency_loss_s
                 g2_generator_t_s_loss = cycle_consistency_loss_t + lsgan_loss_s
 
                 g1_segmentation_t_loss = ce_loss_t + dice_loss_t + 0.1*g1_generator_t_s_loss
 
-                lsgan_loss_p = losses.generator_loss(discriminator_val_results["prob_pred_mask_t_is_real"])
-                lsgan_loss_s_aux = losses.generator_loss(discriminator_val_results["prob_fake_s_aux_is_real"])
+                lsgan_loss_p = losses.generator_loss(discriminator_val_results["prob_pred_mask_t_is_real"].detach())
+                lsgan_loss_s_aux = losses.generator_loss(discriminator_val_results["prob_fake_s_aux_is_real"]).detach()
 
                 g2_segmentation_t_loss = 0.1*g2_generator_t_s_loss + lsgan_loss_p_weight_value*lsgan_loss_p + 0.1*lsgan_loss_s_aux
 
@@ -476,7 +482,7 @@ class UDA:
                 # ----------The Generator_T_S Network i.e Decoder-----------
 
                 # Get Loss specific to Decoder
-                lsgan_loss_s = losses.generator_loss(discriminator_val_results["prob_fake_s_is_real"])
+                lsgan_loss_s = losses.generator_loss(discriminator_val_results["prob_fake_s_is_real"].detach())
                 g1_generator_t_s_loss = cycle_consistency_loss_s
                 g2_generator_t_s_loss = cycle_consistency_loss_t + lsgan_loss_s
 
@@ -485,11 +491,11 @@ class UDA:
                 # ----------The Discriminator_S Network i.e Discriminator_AUX-----------
 
                 # Get Loss specific to Decoder
-                discriminator_s_loss_real, discriminator_s_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_val_results["prob_real_s_is_real"],
-                                                                 prob_fake_is_real=discriminator_val_results["prob_fake_pool_s_is_real"])
+                discriminator_s_loss_real, discriminator_s_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_val_results["prob_real_s_is_real"].detach(),
+                                                                 prob_fake_is_real=discriminator_val_results["prob_fake_pool_s_is_real"].detach())
 
-                discriminator_s_aux_loss_real, discriminator_s_aux_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_val_results["prob_cycle_s_aux_is_real"],
-                                                                 prob_fake_is_real=discriminator_val_results["prob_fake_pool_s_aux_is_real"])
+                discriminator_s_aux_loss_real, discriminator_s_aux_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_val_results["prob_cycle_s_aux_is_real"].detach(),
+                                                                 prob_fake_is_real=discriminator_val_results["prob_fake_pool_s_aux_is_real"].detach())
 
                 pool_discriminator_s_loss = discriminator_s_loss_fake + discriminator_s_aux_loss_fake
 
@@ -498,17 +504,16 @@ class UDA:
                 # ----------The discriminator pred Network i.e Discriminator_MASK-----------
 
                 # Get Loss specific to discriminator_mask
-                discriminator_p_loss_real, discriminator_p_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_val_results["prob_pred_mask_fake_t_is_real"],
-                                                                 prob_fake_is_real=discriminator_val_results["prob_pred_mask_t_is_real"])
+                discriminator_p_loss_real, discriminator_p_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_val_results["prob_pred_mask_fake_t_is_real"].detach(),
+                                                                 prob_fake_is_real=discriminator_val_results["prob_pred_mask_t_is_real"].detach())
 
                 all_losses["discriminator_p_loss"] = discriminator_p_loss_real + discriminator_p_loss_fake
                 # End Validate Loop
 
                 if total_val_iter % self.print_freq == 0:
                     print(f'[val] epoch {epoch:02d}, iter {epoch_val_iter:03d}/{num_val_iter_per_epoch}')
-                    if opt.tensorboard:
-                        for k in all_losses:
-                            writer.add_scalar(f'val/loss/{k}', all_losses[k], total_val_iter)
+                    for k in all_losses:
+                        writer.add_scalar(f'val/loss/{k}', all_losses[k], total_val_iter)
 
                 ##########################################################################################################################################################
 
@@ -522,20 +527,16 @@ class UDA:
             writer.add_scalar(f'hyper_param/seg_lr', curr_seg_lr, epoch_iter)
 
             # save network
-            if epoch % opt.save_epoch_freq == 0:
-                torch.save(model_generators.cpu().state_dict(), os.path.join(self._checkpoint_dir, 'model_generators_{}.pth'.format(epoch)))
-                torch.save(model_discriminators.cpu().state_dict(), os.path.join(self._checkpoint_dir, 'model_discriminators_{}.pth'.format(epoch)))
+            if epoch % self.save_epoch_freq == 0:
+                torch.save(self.model_generators.cpu().state_dict(), os.path.join(self._checkpoint_dir, 'model_generators_{}.pth'.format(epoch)))
+                torch.save(self.model_discriminators.cpu().state_dict(), os.path.join(self._checkpoint_dir, 'model_discriminators_{}.pth'.format(epoch)))
 
             self.model_generators = self.model_generators.to(device)
             self.model_discriminators = self.model_discriminators.to(device)
 
-            if (device.type == 'cuda') and (self.ngpu > 1):
-                self.model_generators = nn.DataParallel(self.model_generators, list(range(self.ngpu)))
-                self.model_discriminators = nn.DataParallel(self.model_discriminators, list(range(self.ngpu)))
-
         writer.close()
-        torch.save(model_generators.cpu().state_dict(), os.path.join(self._checkpoint_dir, 'latest_model_generators.pth'))
-        torch.save(model_discriminators.cpu().state_dict(), os.path.join(self._checkpoint_dir, 'latest_model_discriminators.pth'))
+        torch.save(self.model_generators.cpu().state_dict(), os.path.join(self._checkpoint_dir, 'latest_model_generators.pth'))
+        torch.save(self.model_discriminators.cpu().state_dict(), os.path.join(self._checkpoint_dir, 'latest_model_discriminators.pth'))
 
 
 def main(config_filename):

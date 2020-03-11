@@ -51,11 +51,11 @@ class SIFA_generators(nn.Module):
         images_s = inputs['images_s'].float()
         images_t = inputs['images_t'].float()
 
-        print("Images s & t", images_s.shape, images_t.shape)
+        # print("Images s & t", images_s.shape, images_t.shape)
         # ---------- GRAPH 1 GENERATORS---------------------------------------
 
         fake_images_t = self.generator_s_t(torch.cat((images_s, images_s, images_s), 1))
-        print("fake_images_t", fake_images_t.shape)
+        # print("fake_images_t", fake_images_t.shape)
         latent_fake_t = self.encoder(torch.cat((fake_images_t, fake_images_t, fake_images_t), 1))
 
         pred_mask_fake_t = self.segmenter(latent_fake_t)

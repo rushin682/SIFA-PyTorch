@@ -183,14 +183,14 @@ class CT_MR_Train(Dataset):
 if __name__ == "__main__":
 
     root_dir="data/ct_mr_train"
-    modality = "CT"
+    modality = "MR"
     if modality=="MR":
         images_path="mr_train"
         images_list="mr_val.csv"
 
     elif modality=="CT":
         images_path="ct_train"
-        images_list="ct_val.csv"
+        images_list="ct_test.csv"
 
     dataset = CT_MR_Train(root_dir,modality,images_path,images_list,transform=False, augment_param=None)
 
