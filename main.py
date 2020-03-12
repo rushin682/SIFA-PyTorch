@@ -118,8 +118,8 @@ class UDA:
                          'shear_range': 0.1,
                          'zoom_range': 1.3 }
 
-        train_dataset = CT_MR_Dataset(self._source_train_pth, self._target_train_pth, augment_param=None)
-        val_dataset = CT_MR_Dataset(self._source_val_pth, self._target_val_pth, augment_param=None)
+        train_dataset = CT_MR_Dataset(self._source_train_pth, self._target_train_pth, augment_param=augmentations)
+        val_dataset = CT_MR_Dataset(self._source_val_pth, self._target_val_pth, augment_param=augmentations)
 
         # Custom Samplers
         two_idx_train_sampler = Two_idx_RandomSampler(train_dataset)
@@ -249,7 +249,7 @@ class UDA:
 
                 discriminator_results = self.model_discriminators(generated_images)
                 # print(discriminator_results["prob_pred_mask_fake_t_is_real"].get_device())
-                print("Where is model at? : ", self.model_generators.get_device(), self.model_discriminators.get_device())
+
                 # ----------Optimizing the Generator_S_T Network-----------
 
                 # Set Zero Gradients
