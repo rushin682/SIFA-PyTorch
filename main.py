@@ -38,6 +38,7 @@ class UDA:
 
     def __init__(self, config):
         current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
+        self._data_path = config['data_path']
         self._source_train_pth = config['source_train_path']
         self._target_train_pth = config['target_train_path']
         self._source_val_pth = config['source_val_path']
@@ -113,12 +114,9 @@ class UDA:
         #-------------------- SETTINGS: DATASET BUILDERS
         # Load Dataset from dataloader
 
-        augmentations = {'rotation_angle': 15,
-                         'shift_range': [0.3,0.3],
-                         'shear_range': 0.1,
-                         'zoom_range': 1.3 }
+        augmentations = None
 
-        train_dataset = CT_MR_Dataset(self._source_train_pth, self._target_train_pth, augment_param=augmentations)
+        train_dataset = CT_MR_Dataset(self.data_path, self._source_train_pth, self._target_train_pth, augment_param=augmentations)
         val_dataset = CT_MR_Dataset(self._source_val_pth, self._target_val_pth, augment_param=augmentations)
 
         # Custom Samplers
@@ -220,7 +218,7 @@ class UDA:
             # Train Loop
             self.model_generators.train()
             self.model_discriminators.train()
-            
+
             for idx, batch_sample in enumerate(self.dataloader_train):
 
                 epoch_iter += 1

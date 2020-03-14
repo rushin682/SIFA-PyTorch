@@ -96,21 +96,23 @@ class CT_MR_Dataset(Dataset):
     """CT_MR Training Dataset"""
 
     def __init__(self,
-                 source_path="mr_train_processed.csv",
-                 target_path="ct_train_processed.csv",
+                 data_path="data/MMWHS/ct_mr_dataset",
+                 source_path="mr_train.csv",
+                 target_path="ct_train.csv",
                  augment_param=None):
         """
         Args:
 
         """
 
-        self.source_path = source_path
-        self.target_path = target_path
+        self.data_path = data_path
+        self.source_path = os.path.join(self.data_path, "datalist", source_path)
+        self.target_path = os.path.join(self.data_path, "datalist", target_path)
 
         self.source_list = pd.read_csv(self.source_path, header=None)
-        self.source_images_dir = self.source_path.split('.')[0]
+        self.source_images_dir = os.path.join(self.data_path, source_path.split('.')[0])
         self.target_list = pd.read_csv(self.target_path, header=None)
-        self.target_images_dir = self.target_path.split('.')[0]
+        self.target_images_dir = os.path.join(self.data_path, target_path.split('.')[0])
 
         self.transform = True if not augment_param is None else False
         self.augment_param = augment_param
@@ -241,6 +243,8 @@ class CT_MR_Dataset(Dataset):
         if self.transform:
             image_source, gt_source = self.augmentations(image_source, gt_source)
             image_target, gt_target = self.augmentations(image_target, gt_target)
+            
+        print("Unique intensities", torch.unique(gt_source))
 
         gt_source = self.one_hot(gt_source)
         gt_target = self.one_hot(gt_target)
@@ -252,20 +256,23 @@ class CT_MR_Dataset(Dataset):
 
 if __name__ == "__main__":
 
-    source_path = "data/ct_mr_train/pre_processed/mr_train_processed.csv"
-    target_path="data/ct_mr_train/pre_processed/ct_train_processed.csv"
+    data_path = "data/MMWHS/ct_mr_dataset/"
+    source_path = "mr_train.csv"
+    target_path="ct_train.csv"
 
     rotation_angle = 15
     shift_range = [0.3,0.3]
     shear_range = 0.1
     zoom_range = 1.3
 
-    basic_augmentations = {'rotation_angle': rotation_angle,
-                           'shift_range': shift_range,
-                           'shear_range': shear_range,
-                           'zoom_range': zoom_range }
+    # basic_augmentations = {'rotation_angle': rotation_angle,
+    #                        'shift_range': shift_range,
+    #                        'shear_range': shear_range,
+    #                        'zoom_range': zoom_range }
 
-    dataset = CT_MR_Dataset(source_path, target_path, augment_param=basic_augmentations)
+    basic_augmentations = None
+
+    dataset = CT_MR_Dataset(data_path, source_path, target_path, augment_param=basic_augmentations)
 
     sizes = len(dataset)
 
