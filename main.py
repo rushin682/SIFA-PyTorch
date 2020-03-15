@@ -85,26 +85,24 @@ class UDA:
             (self._pool_size, 1, 1, model.IMG_HEIGHT, model.IMG_WIDTH))
 
 
-    def save_images(self, epoch, images):
-        if not os.path.exists(self._images_dir)
+    def save_images(self, epoch, images, i):
+        if not os.path.exists(self._images_dir):
             os.makedirs(self._images_dir)
-
 
         names = ['inputS_', 'inputT_', 'fakeS_', 'fakeT_', 'cycS_', 'cycT_']
 
-        for i in range(0, self._num_imgs_to_save):
-            # print("Saving image {}/{}".format(i, self._num_imgs_to_save))
-            tensors = [images['images_s'][0,:,:,:],
-                       images['images_t'][0,:,:,:],
-                       images['fake_images_s'][0,:,:,:],
-                       images['fake_images_t'][0,:,:,:],
-                       images['cycle_images_s'][0,:,:,:],
-                       images['cycle_images_t'][0,:,:,:]]
+        # print("Saving image {}/{}".format(i, self._num_imgs_to_save))
+        tensors = [images['images_s'][0,:,:,:],
+                   images['images_t'][0,:,:,:],
+                   images['fake_images_s'][0,:,:,:],
+                   images['fake_images_t'][0,:,:,:],
+                   images['cycle_images_s'][0,:,:,:],
+                   images['cycle_images_t'][0,:,:,:]]
 
-            for name, tensor in zip(names, tensors):
-                image_name = name + str(epoch) + "_" + str(i) + ".tiff"
-                image_name = os.path.join(self._images_dir, image_name)
-                tvu.save_image(tensor, image_name)
+        for name, tensor in zip(names, tensors):
+            image_name = name + str(epoch) + "_" + str(i) + ".tiff"
+            image_name = os.path.join(self._images_dir, image_name)
+            tvu.save_image(tensor, image_name)
 
 
 
@@ -195,7 +193,6 @@ class UDA:
         self.num_fake_val_inputs = 0
         # self.max_images = something
 
-        save_count = -1
         total_iter = 0
         total_val_iter = 0
 
@@ -207,6 +204,7 @@ class UDA:
         for epoch in range(0, self._num_epoch):
             epoch_iter = 0
             epoch_val_iter = 0
+            imgs_counter = 20
 
             print("In the epoch", epoch)
 
@@ -232,8 +230,6 @@ class UDA:
             else:
                 lsgan_loss_p_weight_value = 0.1
 
-            self.save_images(epoch, generated_copy)
-            generated_copy = []
             # Train Loop
             self.model_generators.train()
             self.model_discriminators.train()
@@ -242,8 +238,6 @@ class UDA:
 
                 epoch_iter += 1
                 total_iter += 1
-
-                save_count += 1
 
                 # print("Processing batch {}".format(idx))
 
@@ -262,9 +256,9 @@ class UDA:
                 generated_images["fake_pool_s"] = self.fake_image_pool(self.num_fake_inputs, generated_images["fake_images_s"], self.fake_images_s)
                 self.num_fake_inputs += 1
 
-                if self._imgs_counter > 0:
-                    generated_copy.append(generated_images)
-                    self._imgs_counter -= 1
+                if imgs_counter > 0:
+                    self.save_images(epoch, generated_images, imgs_counter)
+                    imgs_counter -= 1
 
                 # print(generated_images["fake_pool_t"].get_device())
 
@@ -431,7 +425,6 @@ class UDA:
                 epoch_val_iter += 1
                 total_val_iter += 1
 
-                save_count += 1
                 # print("Processing val batch {}".format(idx))
 
                 val_images_s, val_gts_s = batch_sample['image_source'], batch_sample['gt_source']
@@ -544,8 +537,8 @@ class UDA:
 
             self.adverserial_scheduler.step()
 
-            writer.add_scalar(f'hyper_param/lr', curr_lr, epoch_iter)
-            writer.add_scalar(f'hyper_param/seg_lr', curr_seg_lr, epoch_iter)
+            writer.add_scalar(f'hyper_param/lr', curr_lr, epoch)
+            writer.add_scalar(f'hyper_param/seg_lr', curr_seg_lr, epoch)
 
             # save network
             if epoch % self.save_epoch_freq == 0:
