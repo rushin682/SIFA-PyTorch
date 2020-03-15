@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
-import torchvision
+import torchvision.utils as tvu
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
@@ -47,7 +47,6 @@ class UDA:
             os.makedirs(self._output_root_dir)
         self._output_dir = os.path.join(self._output_root_dir, current_time)
         self._images_dir = os.path.join(self._output_dir, 'imgs')
-        self._num_imgs_to_save = 20
         self._pool_size = int(config['pool_size'])
         self._lambda_s = float(config['_LAMBDA_S'])
         self._lambda_t = float(config['_LAMBDA_T'])
@@ -56,7 +55,11 @@ class UDA:
         self._num_cls = int(config['num_cls'])
         self._base_lr = float(config['base_lr'])
         self._segmentation_lr = float(config['segmentation_lr'])
+
         self._num_epoch = int(config['epoch'])
+        self._num_imgs_to_save = 20
+        self._imgs_counter = 20
+
         self._dropout_rate = float(config['dropout_rate'])
         self._is_training = bool(config['is_training'])
         self._batch_size = int(config['batch_size'])
@@ -81,18 +84,32 @@ class UDA:
         self.fake_val_images_t = torch.zeros(
             (self._pool_size, 1, 1, model.IMG_HEIGHT, model.IMG_WIDTH))
 
-    # '''
-    # def save_images(self, epoch):
-    #     if not os.path.exists(self._images_dir)
-    #         os.makedirs(self._images_dir)
-    #
-    #
-    #     names = ['inputS_', 'inputT_', 'fakeS_', 'fakeT_', 'cycS_', 'cycT_']
-    #
-    #     for i in range(0, self._num_imgs_to_save):
-    #         # print("Saving image {}/{}".format(i, self._num_imgs_to_save))
-    # '''
-    #
+
+    def save_images(self, epoch, images):
+        if not os.path.exists(self._images_dir)
+            os.makedirs(self._images_dir)
+
+
+        names = ['inputS_', 'inputT_', 'fakeS_', 'fakeT_', 'cycS_', 'cycT_']
+
+        for i in range(0, self._num_imgs_to_save):
+            # print("Saving image {}/{}".format(i, self._num_imgs_to_save))
+            tensors = [images['images_s'][0,:,:,:],
+                       images['images_t'][0,:,:,:],
+                       images['fake_images_s'][0,:,:,:],
+                       images['fake_images_t'][0,:,:,:],
+                       images['cycle_images_s'][0,:,:,:],
+                       images['cycle_images_t'][0,:,:,:]]
+
+            for name, tensor in zip(names, tensors):
+                image_name = name + str(epoch) + "_" + str(i) + ".tiff"
+                image_name = os.path.join(self._images_dir, image_name)
+                tvu.save_image(tensor, image_name)
+
+
+
+
+
     def fake_image_pool(self, num_fakes, fake, fake_pool):
         if num_fakes < self._pool_size:
             fake_pool[num_fakes] = fake.detach()
@@ -185,6 +202,8 @@ class UDA:
         num_iter_per_epoch = ceil(len(train_dataset) / self._batch_size)
         num_val_iter_per_epoch = ceil(len(val_dataset))
 
+        generated_copy = []
+
         for epoch in range(0, self._num_epoch):
             epoch_iter = 0
             epoch_val_iter = 0
@@ -213,7 +232,8 @@ class UDA:
             else:
                 lsgan_loss_p_weight_value = 0.1
 
-            # self.save_images(epoch)
+            self.save_images(epoch, generated_copy)
+            generated_copy = []
             # Train Loop
             self.model_generators.train()
             self.model_discriminators.train()
@@ -241,6 +261,10 @@ class UDA:
                 generated_images["fake_pool_t"] = self.fake_image_pool(self.num_fake_inputs, generated_images["fake_images_t"], self.fake_images_t)
                 generated_images["fake_pool_s"] = self.fake_image_pool(self.num_fake_inputs, generated_images["fake_images_s"], self.fake_images_s)
                 self.num_fake_inputs += 1
+
+                if self._imgs_counter > 0:
+                    generated_copy.append(generated_images)
+                    self._imgs_counter -= 1
 
                 # print(generated_images["fake_pool_t"].get_device())
 
