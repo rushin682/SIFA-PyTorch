@@ -4,7 +4,6 @@ import json
 import numpy as np
 import random
 import os
-import cv2
 import csv
 from math import floor, ceil
 
@@ -116,8 +115,8 @@ class UDA:
 
         augmentations = None
 
-        train_dataset = CT_MR_Dataset(self.data_path, self._source_train_pth, self._target_train_pth, augment_param=augmentations)
-        val_dataset = CT_MR_Dataset(self._source_val_pth, self._target_val_pth, augment_param=augmentations)
+        train_dataset = CT_MR_Dataset(self._data_path, self._source_train_pth, self._target_train_pth, augment_param=augmentations)
+        val_dataset = CT_MR_Dataset(self._data_path, self._source_val_pth, self._target_val_pth, augment_param=augmentations)
 
         # Custom Samplers
         two_idx_train_sampler = Two_idx_RandomSampler(train_dataset)
@@ -126,8 +125,8 @@ class UDA:
         two_idx_val_batch_sampler = Two_idx_BatchSampler(two_idx_val_sampler, batch_size=1, drop_last=True)
 
         # Dataloaders
-        self.dataloader_train = DataLoader(train_dataset, batch_sampler=two_idx_train_batch_sampler, num_workers=4)
-        self.dataloader_val = DataLoader(val_dataset, batch_sampler=two_idx_val_batch_sampler, num_workers=4)
+        self.dataloader_train = DataLoader(train_dataset, batch_sampler=two_idx_train_batch_sampler, num_workers=8)
+        self.dataloader_val = DataLoader(val_dataset, batch_sampler=two_idx_val_batch_sampler, num_workers=8)
 
 
         #-------------------- SETTINGS: NETWORK ARCHITECTURE
@@ -232,8 +231,8 @@ class UDA:
                 images_t, gts_t = batch_sample['image_target'], batch_sample['gt_target']
 
                 # Executing each network with the current resources
-                images_s = images_s.float().to(device)
-                images_t = images_t.float().to(device)
+                images_s = images_s.to(device)
+                images_t = images_t.to(device)
                 gts_s = gts_s.to(device)
                 gts_t = gts_t.to(device)
                 generated_images = self.model_generators(inputs = {"images_s": images_s, "images_t": images_t})
@@ -415,8 +414,8 @@ class UDA:
                 val_images_t, val_gts_t = batch_sample['image_target'], batch_sample['gt_target']
 
                 # Executing each network with the current resources
-                val_images_s = val_images_s.float().to(device)
-                val_images_t = val_images_t.float().to(device)
+                val_images_s = val_images_s.to(device)
+                val_images_t = val_images_t.to(device)
                 val_gts_s = val_gts_s.to(device)
                 val_gts_t = val_gts_t.to(device)
 

@@ -55,7 +55,7 @@ class Two_idx_BatchSampler(Sampler):
 
     def __len__(self):
         if self.drop_last:
-            return len(self.admissible_length) // self.batch_size
+            return (self.admissible_length) // self.batch_size
         else:
             return (self.admissible_length + self.batch_size - 1) // self.batch_size
 
@@ -143,8 +143,9 @@ class CT_MR_Dataset(Dataset):
 
     def _decode_samples(self, image_path, label_path):
 
-        image = torch.IntTensor(nib.load(image_path+".nii.gz").get_fdata())
-        label = torch.IntTensor(nib.load(label_path+".nii.gz").get_fdata())
+        image = torch.FloatTensor(nib.load(image_path+".nii.gz").get_fdata())
+        label = torch.FloatTensor(nib.load(label_path+".nii.gz").get_fdata())
+        
 
         return image, label
 
@@ -219,20 +220,20 @@ class CT_MR_Dataset(Dataset):
         C = 5
         gt_extended=gt.clone().type(torch.long)
 
-        intensities = [0, 205, 420, 500, 820] # intensities = gt_extended.unique().numpy()
-        mapping = {c: t for c, t in zip(intensities, range(len(intensities)))}
+        # intensities = [0, 1, 2, 3, 4] # intensities = gt_extended.unique().numpy()
+        # mapping = {c: t for c, t in zip(intensities, range(len(intensities)))}
 
-        mask = torch.zeros(256, 256, dtype=torch.long).unsqueeze(0)
-        for k in mapping:
+        # mask = torch.zeros(256, 256, dtype=torch.long).unsqueeze(0)
+        # for k in mapping:
             # Get all indices for current class
-            idx = (gt_extended==torch.tensor(k, dtype=torch.long))
-            mask[idx] = torch.tensor(mapping[k], dtype=torch.long)
+            # idx = (gt_extended==torch.tensor(k, dtype=torch.long))
+            # mask[idx] = torch.tensor(mapping[k], dtype=torch.long)
 
         # print("Mask Shape", mask.shape)
         # print("Mask Unique", mask.unique())
 
         one_hot = torch.FloatTensor(C, gt_extended.size(1), gt_extended.size(2)).zero_()
-        one_hot.scatter_(0, mask, 1)
+        one_hot.scatter_(0, gt_extended, 1)
         return one_hot
 
 
@@ -244,7 +245,7 @@ class CT_MR_Dataset(Dataset):
             image_source, gt_source = self.augmentations(image_source, gt_source)
             image_target, gt_target = self.augmentations(image_target, gt_target)
             
-        print("Unique intensities", torch.unique(gt_source))
+#         print("Unique intensities", torch.unique(gt_source))
 
         gt_source = self.one_hot(gt_source)
         gt_target = self.one_hot(gt_target)
