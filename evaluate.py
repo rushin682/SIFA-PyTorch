@@ -153,26 +153,6 @@ class UDA_EVAL:
         altered_dict = {'.'.join(key.split('.')[1:]):value for key,value in dict.items()}
         return altered_dict
 
-    def one_hot(self, gt):
-        C = 5
-        gt_extended=gt.clone().type(torch.long)
-        gt_extended = gt_extended.unsqueeze(1)
-        # intensities = [0, 1, 2, 3, 4] # intensities = gt_extended.unique().numpy()
-        # mapping = {c: t for c, t in zip(intensities, range(len(intensities)))}
-
-        # mask = torch.zeros(256, 256, dtype=torch.long).unsqueeze(0)
-        # for k in mapping:
-            # Get all indices for current class
-            # idx = (gt_extended==torch.tensor(k, dtype=torch.long))
-            # mask[idx] = torch.tensor(mapping[k], dtype=torch.long)
-
-        # print("Mask Shape", mask.shape)
-        # print("Mask Unique", mask.unique())
-
-        one_hot = torch.FloatTensor(gt_extended.size(0), C, gt_extended.size(2), gt_extended.size(3)).zero_()
-        one_hot.scatter_(1, gt_extended, 1)
-        return one_hot
-
 
     def test(self):
         "Test Function"
@@ -191,6 +171,12 @@ class UDA_EVAL:
         self.model_discriminators = SIFA_discriminators()
         self.model_discriminators.load_state_dict(self.load_param_dict(os.path.join(self._checkpoint_dir, 'latest_model_discriminators.pth')))
 
+        for param in self.model_generators.parameters():
+           param.requires_grad = False
+
+        for param in self.model_discriminators.parameters():
+           param.requires_grad = False
+
         self.model_generators = self.model_generators.to(device)
         self.model_discriminators = self.model_discriminators.to(device)
 
@@ -203,19 +189,22 @@ class UDA_EVAL:
         self.model_generators.eval()
         self.model_discriminators.eval()
         for idx, sample in enumerate(test_dataset):
-            print("Sample #", idx)
+            print("Sample:", idx)
             image, label, dummy = sample['image'], sample['gt'], sample['dummy']
 
             image = image.to(device).unsqueeze(0)
             dummy = dummy.to(device).unsqueeze(0)
-            label = label.to(device).unsqueeze(0)
+            label = label.unsqueeze(0)
 
             print("Shapes: ",image.shape)
 
             tmp_pred = torch.zeros(size=label.shape)
-
+            seg_labels = torch.zeros(size=(1,256,5,256,256))
             for ii in range(int(np.floor(image.shape[1]))):
 
+                self.model_generators.zero_grad()
+                self.model_discriminators.zero_grad()
+           
                 print("Processing Slice:", ii)
                 generated_images = self.model_generators(inputs = {"images_s": dummy[:,0,:,:].unsqueeze(1), "images_t": image[:,ii,:,:].unsqueeze(1)})
 
@@ -224,13 +213,26 @@ class UDA_EVAL:
 
                 discriminator_results = self.model_discriminators(generated_images)
 
+                generated_images = {key:value.cpu() for key,value in generated_images.items()}
+
                 pred_mask_t = generated_images['pred_mask_t']
                 predictor_t = nn.Softmax2d()(pred_mask_t)
                 compact_pred_t, indices = torch.max(predictor_t, dim=1)
 
-                label = self.one_hot(label[:,ii,:,:])
+                C = 5
+                label_extended=label[:,ii,:,:].clone().type(torch.long)
+                label_extended = label_extended.unsqueeze(1)
+                one_hot = torch.FloatTensor(label_extended.size(0), C, label_extended.size(2), label_extended.size(3)).zero_()
+                one_hot.scatter_(1, label_extended, 1)
+
+                seg_labels[:,ii,:,:,:] = one_hot
+                print("label shape",seg_labels.shape)
 
                 tmp_pred[:,ii,:,:] = compact_pred_t.clone()
+
+            image = image.cpu()
+            dummy = dummy.cpu()
+
 
             for c in range(1, self._num_cls):
                 pred_test_data_tr = tmp_pred.clone().numpy()
