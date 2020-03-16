@@ -26,17 +26,23 @@ class Convolution2D(nn.Module):
         self.conv = nn.Conv2d(input_ch, output_ch, kernel_size, stride, padding=padding)
         self.dropout = nn.Dropout(p=dropout_rate)
 
+        # Weight Initialization --> Conv
+        nn.init.normal_(self.conv.weight.data, std=deviation)
+
         if norm_type == "Ins":
             self.norm = nn.InstanceNorm2d(output_ch)
 
         elif norm_type == "Batch":
             self.norm = nn.BatchNorm2d(output_ch, momentum=0.9, track_running_stats=is_training)
+            nn.init.normal_(self.norm.weight.data, 1.0, deviation)
+            nn.init.constant_(self.norm.bias.data, 0.0)
 
         self.relu = nn.LeakyReLU(negative_slope=relu_factor)
 
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.normal_(m.weight, std=deviation)
+        
+        
+        nn.init.normal_
+
 
     def forward(self, input):
 
@@ -75,18 +81,19 @@ class DilatedConv2D(nn.Module):
         self.dil_conv = nn.Conv2d(input_ch, output_ch, kernel_size, padding=padding, dilation=rate)
         self.dropout = nn.Dropout(p=dropout_rate)
 
+        # Weight Initialization --> Conv
+        nn.init.normal_(self.dil_conv.weight.data, std=deviation)
+
         if norm_type == "Ins":
             self.norm = nn.InstanceNorm2d(output_ch)
 
         elif norm_type == "Batch":
             self.norm = nn.BatchNorm2d(output_ch, momentum=0.9, track_running_stats=is_training)
+            nn.init.normal_(self.norm.weight.data, 1.0, deviation)
+            nn.init.constant_(self.norm.bias.data, 0.0)
 
         self.relu = nn.LeakyReLU(negative_slope=relu_factor)
-
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.normal_(m.weight, std=deviation)
-
+      
 
 
     def forward(self, input):
@@ -123,18 +130,19 @@ class Deconvolution2D(nn.Module):
         padding = 0 if padding_mode=="valid" else 1
 
         self.deconv = nn.ConvTranspose2d(input_ch, output_ch, kernel_size, stride, padding=padding)
+        
+        # Weight Initialization --> Conv
+        nn.init.normal_(self.deconv.weight.data, std=deviation)
 
         if norm_type == "Ins":
             self.norm = nn.InstanceNorm2d(output_ch)
 
         elif norm_type == "Batch":
             self.norm = nn.BatchNorm2d(output_ch, momentum=0.9, track_running_stats=is_training)
+            nn.init.normal_(self.norm.weight.data, 1.0, deviation)
+            nn.init.constant_(self.norm.bias.data, 0.0)
 
         self.relu = nn.LeakyReLU(negative_slope=relu_factor)
-
-        for m in self.modules():
-            if isinstance(m, nn.ConvTranspose2d):
-                nn.init.normal_(m.weight, std=deviation)
 
     def forward(self, input):
 

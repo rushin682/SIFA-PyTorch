@@ -68,8 +68,8 @@ class CT_MR_TestSet(Dataset):
 
         elif self.modality=="mr":
             # {-1.8, 4.4} need to be changed according to the data statistics
-            iamge = np.subtract(np.multiply(np.divide(np.subtract(image, -1.8), np.subtract(4.4, -1.8)), 2.0),1)
-
+            image = np.subtract(np.multiply(np.divide(np.subtract(image, -1.8), np.subtract(4.4, -1.8)), 2.0),1)
+        
         image = torch.FloatTensor(image)
         label = torch.FloatTensor(label)
 
@@ -188,7 +188,7 @@ class UDA_EVAL:
         # Test Loop
         self.model_generators.eval()
         self.model_discriminators.eval()
-        for idx, sample in enumerate(test_dataset):
+        for idx, sample in enumerate(self.dataloader_test):
             print("Sample:", idx)
             image, label, dummy = sample['image'], sample['gt'], sample['dummy']
 
@@ -201,6 +201,17 @@ class UDA_EVAL:
             tmp_pred = torch.zeros(size=label.shape)
             seg_labels = torch.zeros(size=(1,256,5,256,256))
             for ii in range(int(np.floor(image.shape[1]))):
+
+                C = 5
+                label_extended=label[:,ii,:,:].clone().type(torch.long)
+                label_extended = label_extended.unsqueeze(1)
+                one_hot = torch.FloatTensor(label_extended.size(0), C, label_extended.size(2), label_extended.size(3)).zero_()
+                one_hot.scatter_(1, label_extended, 1)
+                print("label_extended unique:", torch.unique(label_extended))
+                if len(torch.unique(label_extended)) == 1:
+                    continue
+
+                seg_labels[:,ii,:,:,:] = one_hot
 
                 self.model_generators.zero_grad()
                 self.model_discriminators.zero_grad()
@@ -217,18 +228,11 @@ class UDA_EVAL:
 
                 pred_mask_t = generated_images['pred_mask_t']
                 predictor_t = nn.Softmax2d()(pred_mask_t)
-                compact_pred_t, indices = torch.max(predictor_t, dim=1)
+                print("Predictor_t unique values:", len(torch.unique(predictor_t)))
+                compact_pred_t, indices = torch.max(predictor_t, dim=1, keepdim=True)
 
-                C = 5
-                label_extended=label[:,ii,:,:].clone().type(torch.long)
-                label_extended = label_extended.unsqueeze(1)
-                one_hot = torch.FloatTensor(label_extended.size(0), C, label_extended.size(2), label_extended.size(3)).zero_()
-                one_hot.scatter_(1, label_extended, 1)
-
-                seg_labels[:,ii,:,:,:] = one_hot
-                print("label shape",seg_labels.shape)
-
-                tmp_pred[:,ii,:,:] = compact_pred_t.clone()
+                tmp_pred[:,ii,:,:] = indices.clone()
+                # print("Temp Pred: ", torch.unique(tmp_pred))
 
             image = image.cpu()
             dummy = dummy.cpu()
@@ -237,6 +241,9 @@ class UDA_EVAL:
             for c in range(1, self._num_cls):
                 pred_test_data_tr = tmp_pred.clone().numpy()
                 pred_test_data_tr[pred_test_data_tr != c] = 0
+
+                if 0==np.count_nonzero(pred_test_data_tr):
+                   print("Problem")
 
                 pred_gt_data_tr = label.clone().numpy()
                 pred_gt_data_tr[pred_gt_data_tr != c] = 0
@@ -269,20 +276,6 @@ class UDA_EVAL:
         print (f"LVC: {assd_mean[2]:02d}({assd_std[2]:02d})")
         print (f"Myo: {assd_mean[0]:02d}({assd_std[0]:02d})")
         print (f"Mean: {np.mean(assd_mean):02d}")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

@@ -16,7 +16,7 @@
   "dropout_rate": 0.75,
   "is_training": 1,
   "batch_size": 8,
-  "lr_gan_decay": 0,
+  "lr_gan_decay": 1,
   "lsgan_loss_p_scheduler": 1,
   "to_restore": 0,
   "checkpoint_dir": "checkpoints",

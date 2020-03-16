@@ -36,7 +36,7 @@ class UDA:
     "SIFA end-to-end network module"
 
     def __init__(self, config):
-        current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
+
         self._data_path = config['data_path']
         self._source_train_pth = config['source_train_path']
         self._target_train_pth = config['target_train_path']
@@ -45,7 +45,7 @@ class UDA:
         self._output_root_dir = config['output_root_dir']
         if not os.path.isdir(self._output_root_dir):
             os.makedirs(self._output_root_dir)
-        self._output_dir = os.path.join(self._output_root_dir, current_time)
+        self._output_dir = os.path.join(self._output_root_dir)
         self._images_dir = os.path.join(self._output_dir, 'imgs')
         self._pool_size = int(config['pool_size'])
         self._lambda_s = float(config['_LAMBDA_S'])
@@ -89,6 +89,10 @@ class UDA:
         if not os.path.exists(self._images_dir):
             os.makedirs(self._images_dir)
 
+        epoch_dir = os.path.join(self._images_dir, "Epoch"+str(epoch))
+        if not os.path.exists(epoch_dir):
+            os.makedirs(epoch_dir)
+
         names = ['inputS_', 'inputT_', 'fakeS_', 'fakeT_', 'cycS_', 'cycT_']
 
         # print("Saving image {}/{}".format(i, self._num_imgs_to_save))
@@ -101,7 +105,7 @@ class UDA:
 
         for name, tensor in zip(names, tensors):
             image_name = name + str(epoch) + "_" + str(i) + ".tiff"
-            image_name = os.path.join(self._images_dir, image_name)
+            image_name = os.path.join(epoch_dir, image_name)
             tvu.save_image(tensor, image_name)
 
 
@@ -177,9 +181,6 @@ class UDA:
                                                  + list(self.model_generators.module.segmenter.parameters()),
                                                  lr=curr_seg_lr, weight_decay=0.0001)
 
-
-        self.adverserial_scheduler = StepLR(self.segmentation_optimizer, step_size=2, gamma=0.9, last_epoch=-1)
-
         # -------------------- TENSORBOARD STUFF
         writer = SummaryWriter(comment="BATCH_08")
         all_losses = {}
@@ -208,10 +209,6 @@ class UDA:
 
             print("In the epoch", epoch)
 
-            timestampTime = time.strftime("%H%M%S")
-            timestampDate = time.strftime("%d%m%Y")
-            timestampSTART = timestampDate + '-' + timestampTime
-
             if self._lr_gan_decay:
                 if epoch < (self._num_epoch/2):
                     curr_lr = self._base_lr
@@ -229,6 +226,10 @@ class UDA:
                         lsgan_loss_p_weight_value = 0.1
             else:
                 lsgan_loss_p_weight_value = 0.1
+
+            if epoch > 0 and epoch%2==0:
+                    curr_seg_lr = np.multiply(curr_seg_lr, 0.9)
+
 
             # Train Loop
             self.model_generators.train()
@@ -531,11 +532,6 @@ class UDA:
 
                 ##########################################################################################################################################################
 
-            timestampTime = time.strftime("%H%M%S")
-            timestampDate = time.strftime("%d%m%Y")
-            timestampEND = timestampDate + '-' + timestampTime
-
-            self.adverserial_scheduler.step()
 
             writer.add_scalar(f'hyper_param/lr', curr_lr, epoch)
             writer.add_scalar(f'hyper_param/seg_lr', curr_seg_lr, epoch)
