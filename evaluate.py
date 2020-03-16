@@ -92,26 +92,6 @@ class CT_MR_TestSet(Dataset):
 
         return image, gt
 
-    def one_hot(self, gt):
-        C = 5
-        gt_extended=gt.clone().type(torch.long)
-
-        # intensities = [0, 1, 2, 3, 4] # intensities = gt_extended.unique().numpy()
-        # mapping = {c: t for c, t in zip(intensities, range(len(intensities)))}
-
-        # mask = torch.zeros(256, 256, dtype=torch.long).unsqueeze(0)
-        # for k in mapping:
-            # Get all indices for current class
-            # idx = (gt_extended==torch.tensor(k, dtype=torch.long))
-            # mask[idx] = torch.tensor(mapping[k], dtype=torch.long)
-
-        # print("Mask Shape", mask.shape)
-        # print("Mask Unique", mask.unique())
-
-        one_hot = torch.FloatTensor(C, gt_extended.size(1), gt_extended.size(2)).zero_()
-        one_hot.scatter_(0, gt_extended, 1)
-        return one_hot
-
     def __getitem__(self, idx):
 
         image, gt = self._load_samples(idx)
@@ -119,7 +99,6 @@ class CT_MR_TestSet(Dataset):
         if self.transforms:
             image, gt = self.perform_transforms(image, gt)
 
-        gt = self.one_hot(gt)
         dummy = torch.rand((1,256,256))
 
         sample = {'image': image, 'gt': gt, 'dummy': dummy}
@@ -173,6 +152,27 @@ class UDA_EVAL:
         dict = torch.load(path)
         altered_dict = {'.'.join(key.split('.')[1:]):value for key,value in dict.items()}
         return altered_dict
+
+    def one_hot(self, gt):
+        C = 5
+        gt_extended=gt.clone().type(torch.long)
+        gt_extended = gt_extended.unsqueeze(1)
+        # intensities = [0, 1, 2, 3, 4] # intensities = gt_extended.unique().numpy()
+        # mapping = {c: t for c, t in zip(intensities, range(len(intensities)))}
+
+        # mask = torch.zeros(256, 256, dtype=torch.long).unsqueeze(0)
+        # for k in mapping:
+            # Get all indices for current class
+            # idx = (gt_extended==torch.tensor(k, dtype=torch.long))
+            # mask[idx] = torch.tensor(mapping[k], dtype=torch.long)
+
+        # print("Mask Shape", mask.shape)
+        # print("Mask Unique", mask.unique())
+
+        one_hot = torch.FloatTensor(gt_extended.size(0), C, gt_extended.size(2), gt_extended.size(3)).zero_()
+        one_hot.scatter_(1, gt_extended, 1)
+        return one_hot
+
 
     def test(self):
         "Test Function"
@@ -228,6 +228,7 @@ class UDA_EVAL:
                 predictor_t = nn.Softmax2d()(pred_mask_t)
                 compact_pred_t, indices = torch.max(predictor_t, dim=1)
 
+                label = self.one_hot(label[:,ii,:,:])
 
                 tmp_pred[:,ii,:,:] = compact_pred_t.clone()
 
