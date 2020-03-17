@@ -635,15 +635,14 @@ class Decoder(nn.Module):
 
 #___________________________________________________________________________________________
 
-class Segmenter(nn.Module):
+class Segmenter(nn.Sequential):
     def __init__(self, latent_inp_ch, dropout_rate=0.75):
-        super(Segmenter, self).__init__()
-
-        self.segment_net = nn.Sequential(ASPP(latent_inp_ch, [12, 24, 36]),
-                                         nn.Conv2d(256, 256, 3, padding=1, bias=False),
-                                         nn.BatchNorm2d(256),
-                                         nn.ReLU(),
-                                         nn.Conv2d(256, 5, 1))
+        super(Segmenter, self).__init__(ASPP(latent_inp_ch, [4, 6, 8]), # [12, 24, 36]
+                                        nn.Conv2d(256, 256, 3, padding=1, bias=False),
+                                        nn.BatchNorm2d(256),
+                                        nn.ReLU(),
+                                        nn.Conv2d(256, 5, 1),
+                                        nn.UpsamplingBilinear2d(size=(256,256)))
 
         # self.segment_net = Convolution2D(latent_inp_ch, 5,
         #                                kernel_size=1, stride=1,
@@ -656,18 +655,19 @@ class Segmenter(nn.Module):
 
 
 
-    def forward(self, latent_input):
+    # def forward(self, latent_input):
 
-        output = self.segment_net(latent_input)
+
+        # output = self.segment_net(latent_input)
         # output = self.upsample(output)
 
         # resized_output = to_tensor(resize(to_pil_image(output.squeeze())))
 
-        return output
+        # return output
 
 if __name__ == "__main__":
     model = Segmenter(latent_inp_ch = 512, dropout_rate=0.75)
-    summary(model, input_size=(512, 40, 40))
+    summary(model.cuda(), input_size=(512, 32, 32))
     #
     # model = Encoder(input_ch = 1, skip_conn = True)
     # summary(model, input_size=(1, 256, 256))

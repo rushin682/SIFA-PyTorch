@@ -15,7 +15,9 @@ def generator_loss(prob_fake_is_real):
     Computes the LS-GAN loss as minimized by the generator. or MSE Loss
     """
     gan_loss = torch.nn.MSELoss(reduction='mean')
-    return gan_loss(1, prob_fake_is_real)
+    target_tensor = torch.tensor(1.0)
+    target_tensor.expand_as(prob_fake_is_real)
+    return gan_loss(target_tensor, prob_fake_is_real)
 
 
 def discriminator_loss(prob_real_is_real, prob_fake_is_real):
@@ -23,8 +25,13 @@ def discriminator_loss(prob_real_is_real, prob_fake_is_real):
     Computes the LS-GAN loss as minimized by the discriminator. or MSE Loss
     """
     gan_loss = torch.nn.MSELoss(reduction='mean')
+    real_target = torch.tensor(1.0)
+    real_target.expand_as(prob_real_is_real)
 
-    return gan_loss(1, prob_real_is_real) + gan_loss(0, prob_fake_is_real)
+    fake_target = torch.tensor(0.0)
+    fake_target.expand_as(prob_fake_is_real)
+
+    return gan_loss(real_target, prob_real_is_real) + gan_loss(fake_target, prob_fake_is_real)
 
 
 def _softmax_weighted_loss(logits, gt, num_classes=5):
@@ -32,23 +39,20 @@ def _softmax_weighted_loss(logits, gt, num_classes=5):
     Calculate weighted cross-entropy loss.
     """
     # compute softmax over the classes axis
-    # input_soft = F.softmax2d(input, dim=1)
-    # predi = input_soft[:,i,:,:]
+    sftmx = torch.nn.Softmax2d()
+    softmaxpred = sftmx(logits)
+    '''questionanble'''
 
-    weigths = []
     for i in range(num_classes):
         gti = gt[:,i,:,:]
+        predi = softmaxpred[:,i,:,:]
         weighted = 1-(torch.sum(gti) / torch.sum(gt))
-        weights.append(weighted)
+        if i == 0:
+            raw_loss = -1.0 * weighted * gti * torch.log(torch.clamp(predi, 0.005, 1))
+        else:
+            raw_loss += -1.0 * weighted * gti * torch.log(torch.clamp(predi, 0.005, 1))
 
-    CELoss = torch.nn.CrossEntropyLoss(torch.FloatTensor(weights))
-
-        # if i == 0:
-        #     raw_loss = -1.0 * weighted * gti * torch.log(torch.clamp(predi, 0.005, 1))
-        # else:
-        #     raw_loss += -1.0 * weighted * gti * torch.log(torch.clamp(predi, 0.005, 1))
-
-    loss = CELoss(logits, gt)
+    loss = torch.mean(raw_loss)
 
     return loss
 
@@ -60,15 +64,13 @@ def _dice_loss(logits, gt, num_classes=5):
     dice = 0
     eps = 1e-7
 
-    # compute softmax over the classes axis
-    input_soft = F.softmax2d(input, dim=1)
+    sftmx = torch.nn.Softmax2d()
+    softmaxpred = sftmx(logits)
+    '''questionanble'''
 
-    # The labels are already one hot tensors
-
-    # Computing the Actual Dice Score
     for i in range(num_classes):
-        inse = torch.sum(input_soft[:, i, :, :]*gt[:, i, :, :])
-        l = torch.sum(input_soft[:, i, :, :]*input_soft[:, i, :, :])
+        inse = torch.sum(softmaxpred[:, i, :, :]*gt[:, i, :, :])
+        l = torch.sum(softmaxpred[:, i, :, :]*softmaxpred[:, i, :, :])
         r = torch.sum(gt[:, i, :, :])
         dice += 2.0 * inse/(l+r+eps)
 
