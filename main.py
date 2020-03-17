@@ -307,16 +307,15 @@ class UDA:
 
                 # Get Loss specific to Discriminator_T and propogate backwards
 
-                discriminator_t_loss_real, discriminator_t_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_results["prob_real_t_is_real"],
+                discriminator_t_loss = losses.discriminator_loss(prob_real_is_real=discriminator_results["prob_real_t_is_real"],
                                                                  prob_fake_is_real=discriminator_results["prob_fake_pool_t_is_real"])
 
-                discriminator_t_loss_real.backward()
-                discriminator_t_loss_fake.backward()
+                discriminator_t_loss.backward()
 
                 # Step optimizer
                 self.discriminator_t_optimizer.step()
 
-                all_losses["discriminator_t_loss"] = discriminator_t_loss_real + discriminator_t_loss_fake
+                all_losses["discriminator_t_loss"] = discriminator_t_loss
 
 
 
@@ -374,22 +373,20 @@ class UDA:
                 self.model_discriminators.zero_grad()
 
                 # Get Loss specific to Decoder and propogate backwards
-                discriminator_s_loss_real, discriminator_s_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_results["prob_real_s_is_real"],
+                discriminator_s_loss = losses.discriminator_loss(prob_real_is_real=discriminator_results["prob_real_s_is_real"],
                                                                  prob_fake_is_real=discriminator_results["prob_fake_pool_s_is_real"])
 
-                discriminator_s_aux_loss_real, discriminator_s_aux_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_results["prob_cycle_s_aux_is_real"],
+                discriminator_s_aux_loss = losses.discriminator_loss(prob_real_is_real=discriminator_results["prob_cycle_s_aux_is_real"],
                                                                  prob_fake_is_real=discriminator_results["prob_fake_pool_s_aux_is_real"])
 
-                pool_discriminator_s_loss = discriminator_s_loss_fake + discriminator_s_aux_loss_fake
+                discriminator_s_loss = discriminator_s_loss + discriminator_s_aux_loss
 
-                discriminator_s_loss_real.backward()
-                discriminator_s_aux_loss_real.backward()
-                pool_discriminator_s_loss.backward()
+                discriminator_s_loss.backward()
 
                 # Step optimizer
                 self.discriminator_s_optimizer.step()
 
-                all_losses["discriminator_s_loss"] = discriminator_s_loss_real + discriminator_s_aux_loss_real + pool_discriminator_s_loss
+                all_losses["discriminator_s_loss"] = discriminator_s_loss
 
                 # ----------Optimizing the discriminator pred Network i.e Discriminator_MASK-----------
 
@@ -398,16 +395,15 @@ class UDA:
                 self.model_discriminators.zero_grad()
 
                 # Get Loss specific to discriminator_mask and propogate backwards
-                discriminator_p_loss_real, discriminator_p_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_results["prob_pred_mask_fake_t_is_real"],
+                discriminator_p_loss = losses.discriminator_loss(prob_real_is_real=discriminator_results["prob_pred_mask_fake_t_is_real"],
                                                                  prob_fake_is_real=discriminator_results["prob_pred_mask_t_is_real"])
 
-                discriminator_p_loss_real.backward()
-                discriminator_p_loss_fake.backward()
+                discriminator_p_loss.backward()
 
                 # Step optimizer
                 self.discriminator_p_optimizer.step()
 
-                all_losses["discriminator_p_loss"] = discriminator_p_loss_real + discriminator_p_loss_fake
+                all_losses["discriminator_p_loss"] = discriminator_p_loss
                 # End Train Loop
 
                 if total_iter % self.print_freq == 0:
@@ -471,10 +467,10 @@ class UDA:
 
                 # ----------The Discriminator_T Network-----------
 
-                discriminator_t_loss_real, discriminator_t_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_val_results["prob_real_t_is_real"].detach(),
+                discriminator_t_loss = losses.discriminator_loss(prob_real_is_real=discriminator_val_results["prob_real_t_is_real"].detach(),
                                                                  prob_fake_is_real=discriminator_val_results["prob_fake_pool_t_is_real"].detach())
 
-                all_losses["discriminator_t_loss"] = discriminator_t_loss_real + discriminator_t_loss_fake
+                all_losses["discriminator_t_loss"] = discriminator_t
                 # ----------The Segmentation Network i.e E + C-----------
 
                 # Get Loss specific to Segmentation
@@ -506,23 +502,23 @@ class UDA:
                 # ----------The Discriminator_S Network i.e Discriminator_AUX-----------
 
                 # Get Loss specific to Decoder
-                discriminator_s_loss_real, discriminator_s_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_val_results["prob_real_s_is_real"].detach(),
+                discriminator_s_loss = losses.discriminator_loss(prob_real_is_real=discriminator_val_results["prob_real_s_is_real"].detach(),
                                                                  prob_fake_is_real=discriminator_val_results["prob_fake_pool_s_is_real"].detach())
 
-                discriminator_s_aux_loss_real, discriminator_s_aux_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_val_results["prob_cycle_s_aux_is_real"].detach(),
+                discriminator_s_aux_loss = losses.discriminator_loss(prob_real_is_real=discriminator_val_results["prob_cycle_s_aux_is_real"].detach(),
                                                                  prob_fake_is_real=discriminator_val_results["prob_fake_pool_s_aux_is_real"].detach())
 
-                pool_discriminator_s_loss = discriminator_s_loss_fake + discriminator_s_aux_loss_fake
 
-                all_losses["discriminator_s_loss"] = discriminator_s_loss_real + discriminator_s_aux_loss_real + pool_discriminator_s_loss
+
+                all_losses["discriminator_s_loss"] = discriminator_s_loss + discriminator_s_aux_loss
 
                 # ----------The discriminator pred Network i.e Discriminator_MASK-----------
 
                 # Get Loss specific to discriminator_mask
-                discriminator_p_loss_real, discriminator_p_loss_fake = losses.discriminator_loss(prob_real_is_real=discriminator_val_results["prob_pred_mask_fake_t_is_real"].detach(),
+                discriminator_p_loss = losses.discriminator_loss(prob_real_is_real=discriminator_val_results["prob_pred_mask_fake_t_is_real"].detach(),
                                                                  prob_fake_is_real=discriminator_val_results["prob_pred_mask_t_is_real"].detach())
 
-                all_losses["discriminator_p_loss"] = discriminator_p_loss_real + discriminator_p_loss_fake
+                all_losses["discriminator_p_loss"] = discriminator_p_loss
                 # End Validate Loop
 
                 if total_val_iter % self.print_freq == 0:
