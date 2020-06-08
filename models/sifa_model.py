@@ -60,7 +60,7 @@ class SIFA(BaseModel):
         D_P : Discriminator Mask(discriminates mask of S and T)
         """
 
-        # self.netE =
+        # self.netE = networks.define_E()
 
         self.netC = networks.define_C(opt.seg_input_nc, opt.seg_output_nc, opt.netC, opt.norm,
                                       not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
@@ -88,4 +88,13 @@ class SIFA(BaseModel):
             #define loss functions
             self.criterionGAN = networks.GANLoss(opt.gan_mode).to(self.device)  # define GAN loss.
             self.criterionCycle - torch.nn.L1Loss()
-            
+            # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
+            self.optimizer_G_T = torch.optim.Adam(self.netG_T.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+            self.optimizer_U = torch.optim.Adam(self.netU.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+
+            self.optimizer_D_T = torch.optim.Adam(self.netD_T.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+            self.optimizer_D_S = torch.optim.Adam(self.netD_S.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+            self.optimizer_D_P = torch.optim.Adam(self.netD_P.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+
+            self.optimizer_Seg = torch.optim.Adam(itertools.chain(self.netE.parameters(), self.netC.parameters()),
+                                                  lr=opt.seg_lr, betas=(opt.beta1, 0.999), weight_decay=opt.decay_rate)

@@ -177,6 +177,37 @@ def define_D(input_nc, ndf, netD, n_layers_D=3, norm='batch', init_type='normal'
     return init_net(net, init_type, init_gain, gpu_ids)
 
 
+def define_E(input_nc, output_nc, ngf, netE, norm='batch', use_dropout=True, init_type='normal', init_gain=0.02, gpu_ids=[]):
+    """Create an encoder
+    Parameters:
+        input_nc (int) -- the number of channels in input images
+        output_nc (int) -- the number of channels in output images
+        ngf (int) -- the number of filters in the last conv layer
+        netE (str) -- the architecture's name: 'default' | X mods ... X
+        norm (str) -- the name of normalization layers used in the network: batch | instance | none
+        use_dropout (bool) -- if use dropout layers.
+        init_type (str)    -- the name of our initialization method.
+        init_gain (float)  -- scaling factor for normal, xavier and orthogonal.
+        gpu_ids (int list) -- which GPUs the network runs on: e.g., 0,1,2
+    Returns an encoder
+    Our current implementation provides these encoders:
+
+        Resnet-based encoder: [
+            Resnet-based encoder consists of several Resnet blocks between a few downsampling,upsampling and occasional maxpool operations.
+    The encoder has been initialized by <init_net>. It uses RELU for non-linearity.
+    """
+    net = None
+    norm_layer = get_norm_layer(norm_type=norm)
+
+    if netE == 'default':
+        net = ResnetEncoder(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=9, n_downsampling=2, n_upsampling=2)
+    else:
+        raise NotImplementedError('Encoder model name [%s] is not recognized' % netE)
+    return init_net(net, init_type, init_gain, gpu_ids)
+
+
+
+
 class ResnetGenerator(nn.Module):
     """Resnet-based generator that consists of Resnet blocks between a few downsampling/upsampling operations.
     We adapt Torch code and idea from Justin Johnson's neural style transfer project(https://github.com/jcjohnson/fast-neural-style)
