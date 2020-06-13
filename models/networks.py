@@ -168,6 +168,8 @@ def define_D(input_nc, ndf, netD, n_layers_D=3, norm='batch', init_type='normal'
 
     if netD == 'basic':  # default PatchGAN classifier
         net = NLayerDiscriminator(input_nc, ndf, n_layers=3, norm_layer=norm_layer)
+    elif netD == 'aux': # default PatchGAN with an auxiliary classifier
+        net = NLayerDiscriminator(input_nc, ndf, n_layers=3, norm_layer=norm_layer, is_aux=True)
     elif netD == 'n_layers':  # more options
         net = NLayerDiscriminator(input_nc, ndf, n_layers_D, norm_layer=norm_layer)
     elif netD == 'pixel':     # classify if each pixel is real or fake
@@ -560,7 +562,7 @@ class ResnetBlock(nn.Module):
 class NLayerDiscriminator(nn.Module):
     """Defines a PatchGAN discriminator"""
 
-    def __init__(self, input_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d):
+    def __init__(self, input_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d, is_aux=False):
         """Construct a PatchGAN discriminator
         Parameters:
             input_nc (int)  -- the number of channels in input images
@@ -595,8 +597,10 @@ class NLayerDiscriminator(nn.Module):
             norm_layer(ndf * nf_mult),
             nn.LeakyReLU(0.2, True)
         ]
-
-        sequence += [nn.Conv2d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)]  # output 1 channel prediction map
+        if is_aux:
+            sequence += [nn.Conv2d(ndf * nf_mult, 2, kernel_size=kw, stride=1, padding=padw)]  # output 2 channel prediction map
+        else:
+            sequence += [nn.Conv2d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)]  # output 1 channel prediction map
         self.model = nn.Sequential(*sequence)
 
     def forward(self, input):
@@ -695,3 +699,68 @@ class GANLoss(nn.Module):
             else:
                 loss = prediction.mean()
         return loss
+
+
+class DICELoss(nn.module):
+    """
+    Define Dice Loss Objective.
+    """
+
+    def __init__(self, num_classes=5, epsilon=1e-7, p=2):
+        """ Initialize the DICELoss class.
+        Parameters:
+            num_classes (int) - - number of classes for which the loss is calculated
+            epsilon -- smoothness considered
+        Note: Do not use sigmoid as the last layer of Discriminator.
+        """
+        super(DICELoss, self).__init__()
+
+        self.softmax = nn.Softmax(dim = 1) # dim 1 --> num_filters/classes
+        self.num_classes=num_classes
+        self.eps = epsilon
+        self.p = p
+
+    def __call__(self, mask, gt):
+        """Calculate dice loss given Classifier's output and ground trutg labels.
+        Parameters:
+            mask (tensor) : The segmentation prediction output from the classifier
+            ground truth (gt) : The actual segmentation groundtruth
+        Returns:
+            The dice score loss
+        """
+        dice = 0
+        mask = self.softmax(mask)
+        for i in range(num_classes):
+            prediction = mask[:, i, :, :]
+            target = gt[:, i, :, :]
+            inse = torch.sum(prediction * target)
+
+            l = torch.sum(prediction.pow(self.p))
+            r = torch.sum(target.pow(self.p))
+            dice += 2.0 * inse/(l+r+self.eps)
+
+        return 1 - 1.0 * dice / self.num_classes
+
+
+class WCELoss(nn.module):
+    """
+    Define Weighted Cross Entropy Loss Objective.
+    """
+
+    def __init__(self, num_classes=5):
+        """ Initialize the Weighted CELoss class.
+        Parameters:
+            num_classes (int) -- number of classes for calculating the weight of the CE loss.
+        """
+        super(WCELoss, self).__init__()
+
+        self.num_classes = num_classes
+
+    def __call__(self, logits, gt):
+        weights = []
+        for i in range(self.num_classes):
+            gti = gt[:, i, :, :]
+            weights[i] = 1 - (torch.sum(gti)/torch.sum(gt))
+        self.loss = nn.CrossEntropyLoss(weight=weights)
+
+        return self.loss(logits, gt)
