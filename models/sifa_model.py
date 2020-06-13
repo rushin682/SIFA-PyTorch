@@ -89,9 +89,9 @@ class SIFA(BaseModel):
             self.fake_T_pool = ImagePool(opt.pool_size) # create image buffer to store previously generated images
             #define loss functions
             self.criterionGAN = networks.GANLoss(opt.gan_mode).to(self.device)  # define GAN loss.
-            self.criterionCycle = torch.nn.L1Loss()
-            self.criterionSeg_Dice = networks.DICELoss(num_classes=5) # num_classes = opt.num_classes
-            self.criterionSeg_CE = networks.WCELoss(num_classes=5) # num_classes = opt.num_classes
+            self.criterionCycle = torch.nn.L1Loss().to(self.device)
+            self.criterionSeg_Dice = networks.DICELoss(num_classes=5).to(self.device) # num_classes = opt.num_classes
+            self.criterionSeg_CE = networks.WCELoss(num_classes=5).to(self.device) # num_classes = opt.num_classes
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
             self.optimizer_G_T = torch.optim.Adam(self.netG_T.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizer_U = torch.optim.Adam(self.netU.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
@@ -209,6 +209,9 @@ class SIFA(BaseModel):
         fake_S = self.fake_S_pool.query(self.fake_S)
         self.loss_D_S = self.backward_D_basic(self.netD_S, self.real_S, fake_S, use_aux=True)
 
+    def backward_D_P(self):
+        """Calculate GAN loss for discriminator D_P"""
+        self.loss_D_P = self.backward_D_basic(self.netD_P, self.mask_T, self.mask_fake_T)
 
 
     def backward_Seg(self):
@@ -242,31 +245,35 @@ class SIFA(BaseModel):
         self.forward()      # compute fake images and reconstruction images.
         # G_T
         self.set_requires_grad([self.netD_T], False)  # D_T require no gradients when optimizing G_T
-        self.optimizer_G_T.zero_grad()  # set G_T's gradients to zero
-        self.backward_G_T()             # calculate gradients for G_T
-        self.optimizer_G_T.step()       # update G_T's weights
+        self.optimizer_G_T.zero_grad()                # set G_T's gradients to zero
+        self.backward_G_T()                           # calculate gradients for G_T
+        self.optimizer_G_T.step()                     # update G_T's weights
 
         # D_T
-        self.set_requires_grad([self.netD_T], True)
-        self.optimizer_D.zero_grad()
-        self.backward_D_T()
-        self.optimizer_D_T.step()
+        self.set_requires_grad([self.netD_T], True) # D_T requires gradients to optimize itself.
+        self.optimizer_D.zero_grad()                # set D_T's gradients to zero
+        self.backward_D_T()                         # calculate gradients for D_T
+        self.optimizer_D_T.step()                   # update D_T's weights
 
         # E + C
         self.set_requires_grad([self.netD_S, self.netD_P], False) # D_S and D_P require no gradients when optimizing E+C
-        self.optimizer_Seg.zero_grad()
-        self.backward_Seg()
-        self.optimizer_Seg.step()
+        self.optimizer_Seg.zero_grad()                            # set (E+C)'s gradients to zero
+        self.backward_Seg()                                       # calculate gradients for E+C
+        self.optimizer_Seg.step()                                 # update {E,C}'s weights'
 
         # U
-        self.optimizer_U.zero_grad()
-        self.backward_U()
-        self.optimizer_U.step()
+        self.optimizer_U.zero_grad() # set decoder U's gradients to zero
+        self.backward_U()            # calculate gradients for U
+        self.optimizer_U.step()      # update U's weights
 
         # D_S
-        self.set_requires_grad([self.netD_S], True)
-        self.optimizer_D_S.zero_grad()
-        self.backward_D_S()
-        self.optimizer_D_S.step()
+        self.set_requires_grad([self.netD_S], True) # D_S requires gradients to optimize itself.
+        self.optimizer_D_S.zero_grad()              # set D_S's gradients to zero
+        self.backward_D_S()                         # calculating gradients for D_S
+        self.optimizer_D_S.step()                   # update D_S's weights
 
-        
+        #D_P
+        self.set_requires_grad([self.netD_P], True) #
+        self.optimizer_D_P.zero_grad()
+        self.backward_D_P()
+        self.optimizer_D_P.step()
