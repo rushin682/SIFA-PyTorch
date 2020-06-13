@@ -76,6 +76,7 @@ class SIFA(BaseModel):
             self.netD_T = networks.define_D(opt.input_nc, opt.ndf, opt.netD,
                                             opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
 
+            # Discriminator_S i.e with an auxiliary o/p
             self.netD_S = networks.define_D(opt.output_nc, opt.ndf, opt.netD,
                                             opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
 
@@ -88,7 +89,9 @@ class SIFA(BaseModel):
             self.fake_T_pool = ImagePool(opt.pool_size) # create image buffer to store previously generated images
             #define loss functions
             self.criterionGAN = networks.GANLoss(opt.gan_mode).to(self.device)  # define GAN loss.
-            self.criterionCycle - torch.nn.L1Loss()
+            self.criterionCycle = torch.nn.L1Loss()
+            self.criterionSeg_Dice = networks.DICELoss(num_classes=5) # num_classes = opt.num_classes
+            self.criterionSeg_CE = networks.WCELoss(num_classes=5) # num_classes = opt.num_classes
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
             self.optimizer_G_T = torch.optim.Adam(self.netG_T.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizer_U = torch.optim.Adam(self.netU.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
@@ -146,6 +149,21 @@ class SIFA(BaseModel):
         self.loss_G = self.loss_G_T + self.loss_cycle_S + self.loss_cycle_T
         self.loss_G.backward()
 
+    def backward_U(self):
+        """Calculate the loss for generators U"""
+        lambda_S = self.opt.lambda_S
+        lambda_T = self.opt.lambda_T
+
+        # GAN Loss D_S(U(S))
+        self.loss_G_S = self.criterionGAN(self.netD_S(self.fake_S), True)
+        # Forward cycle loss || rec_S or U(E(G_T(S))) - S ||
+        self.loss_cycle_S = self.criterionCycle(self.rec_S, self.real_S) * lambda_S
+        # Backward cycle loss || rec_T or G_T(D(E(T))) - T ||
+        self.loss_cycle_T = self.criterionCycle(self.rec_T, self.real_T) * lambda_T
+        # combined loss and calculate gradients
+        self.loss_U = self.loss_G_S + self.loss_cycle_S + self.loss_cycle_T
+        self.loss_U.backward()
+
     def backward_D_basic(self, netD, real, fake):
         """Calculate GAN loss for the discriminator
         Parameters:
@@ -172,16 +190,40 @@ class SIFA(BaseModel):
         fake_T = self.fake_T_pool.query(self.fake_T)
         self.loss_D_T = self.backward_D_basic(self.netD_T, self.real_T, fake_T)
 
+    def backward_Seg(self):
+        """Calculate total segmentation loss for encoder E and segmenter C"""
+
+        # GAN Loss D_S(G_S(T))
+        self.loss_G_S = self.criterionGAN(self.netD_S(self.fake_S)[0], True)
+        # Forward cycle loss || rec_S or U(E(G_T(S))) - S ||
+        self.loss_cycle_S = self.criterionCycle(self.rec_S, self.real_S) * lambda_S
+        # Backward cycle loss || rec_T or G_T(D(E(T))) - T ||
+        self.loss_cycle_T = self.criterionCycle(self.rec_T, self.real_T) * lambda_T
+
+        # Adversarial loss via generated image space
+        self.loss_aux_S = self.criterionGAN(self.netD_S(self.fake_S)[1], True)
+        self.encoder_loss = self.loss_G_S + self.loss_cycle_S + self.loss_cycle_T + self.loss_aux_S
+
+        # Adversarial loss via semantic prediction space
+        self.loss_P = self.criterionGAN(self.netD_P(self.mask_T), True) # Should it be mask_T?
+        self.dice_loss_T = self.criterionSeg_Dice(self.mask_fake_T, self.gt_S)
+        self.ce_loss_T = self.criterionSeg_CE(self.mask_fake_T, self.gt_S)
+
+        self.classifier_loss = self.ce_loss_T + self.dice_loss_T + (self.loss_p_weight_value * self.loss_P)
+
+        # Segmentation Loss = dice loss + cross-entropy loss
+        self.seg_loss = (0.1 * self.encoder_loss) + self.classifier_loss
+        self.seg_loss.backward()
 
     def optimize_parameters(self):
         """Calculate losses, gradients, and update network weights; called in every training iteration"""
         # forward
         self.forward()      # compute fake images and reconstruction images.
         # G_T
-        self.set_requires_grad([self.netD_T], False)  # Ds require no gradients when optimizing Gs
-        self.optimizer_G_T.zero_grad()  # set G_A and G_B's gradients to zero
-        self.backward_G_T()             # calculate gradients for G_A and G_B
-        self.optimizer_G_T.step()       # update G_A and G_B's weights
+        self.set_requires_grad([self.netD_T], False)  # D_T require no gradients when optimizing G_T
+        self.optimizer_G_T.zero_grad()  # set G_T's gradients to zero
+        self.backward_G_T()             # calculate gradients for G_T
+        self.optimizer_G_T.step()       # update G_T's weights
 
         # D_T
         self.set_requires_grad([self.netD_T], True)
@@ -190,4 +232,12 @@ class SIFA(BaseModel):
         self.optimizer_D_T.step()
 
         # E + C
-        
+        self.set_requires_grad([self.netD_S, self.netD_P], False) # D_S and D_P require no gradients when optimizing E+C
+        self.optimizer_Seg.zero_grad()
+        self.backward_Seg()
+        self.optimizer_Seg.step()
+
+        # U
+        self.optimizer_U.zero_grad()
+        self.backward_U()
+        self.optimizer_U.step()
