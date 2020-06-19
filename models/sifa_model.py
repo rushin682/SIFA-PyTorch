@@ -18,8 +18,8 @@ class SIFA(BaseModel):
             is_train (bool) -- whether training phase or test phase. You can use this flag to add training-specific or test-specific options.
         Returns:
             the modified parser.
-        For SIFA, in addition to GAN losses, we introduce lambda_A, and lambda_B for the following losses.
-        A (source domain), B (target domain).
+        For SIFA, in addition to GAN losses, we introduce lambda_S, and lambda_T for the following losses.
+        S (source domain), T (target domain).
         """
         parser.set_defaults(no_dropout=True)  # default CycleGAN did not use dropout
         if is_train:
@@ -38,10 +38,10 @@ class SIFA(BaseModel):
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
         self.loss_names = ['D_T', 'G_T', 'cycle_S', 'D_S', 'G_S', 'cycle_T', 'Seg', 'D_P']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
-        visual_names_A = ['real_S', 'fake_T', 'rec_S']
-        visual_names_B = ['real_T', 'fake_S', 'rec_T']
+        visual_names_S = ['real_S', 'fake_T', 'rec_S']
+        visual_names_T = ['real_T', 'fake_S', 'rec_T']
 
-        self.visual_names = visual_names_A + visual_names_B  # combine visualizations for A and B
+        self.visual_names = visual_names_S + visual_names_T  # combine visualizations for S and T
         # specify the models you want to save to the disk. The training/test scripts will call <BaseModel.save_networks> and <BaseModel.load_networks>.
         if self.isTrain:
             self.model_names = ['G_T', 'E', 'U', 'D_T', 'D_S', 'C', 'D_P']
@@ -112,12 +112,15 @@ class SIFA(BaseModel):
         """Unpack input data from the dataloader and perform necessary pre-processing steps.
         Parameters:
             input (dict): include the data itself and its metadata information.
-        The option 'direction' can be used to swap domain A and domain B.
+        The option 'direction' can be used to swap domain S and domain T.
         """
-        AtoB = self.opt.direction == 'AtoB'
-        self.real_A = input['A' if AtoB else 'B'].to(self.device)
-        self.real_B = input['B' if AtoB else 'A'].to(self.device)
-        self.image_paths = input['A_paths' if AtoB else 'B_paths']
+        stoT = self.opt.direction == 'StoT'
+        self.real_S = input['S' if stoT else 'T'].to(self.device)
+        self.real_T = input['T' if stoT else 'S'].to(self.device)
+        self.gt_S = input['gt_S' if stoT else 'gt_T'].to(self.device)
+        self.gt_T = input['gt_T' if stoT else 'gt_S'].to(self.device)
+        
+        self.image_paths = input['S_paths' if StoT else 'T_paths']
 
 
     def forward(self):
@@ -127,7 +130,6 @@ class SIFA(BaseModel):
         self.fake_latent_T = self.netE(self.fake_T) # E(fake_T)
         self.rec_S = self.netU(self.fake_latent_T)   # D(E(fake_T))
         self.mask_fake_T = self.netC(self.fake_latent_T) # C(E(fake_T))
-
 
         self.latent_T = self.netE(self.real_T)  # E(T)
         self.fake_S = self.netU(self.latent_T) # D(E(T))
