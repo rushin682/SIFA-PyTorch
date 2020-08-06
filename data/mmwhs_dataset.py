@@ -6,7 +6,7 @@ from PIL import Image
 import random
 
 
-class UnalignedDataset(BaseDataset):
+class MMWHSDataset(BaseDataset):
     """
     This dataset class can load unaligned/unpaired datasets.
     It requires two directories to host training images from domain S '/path/to/data/trainS'
@@ -32,7 +32,7 @@ class UnalignedDataset(BaseDataset):
         ttoS = self.opt.direction == 'TtoS'
         input_nc = self.opt.output_nc if ttoS else self.opt.input_nc       # get the number of channels of input image
         output_nc = self.opt.input_nc if ttoS else self.opt.output_nc      # get the number of channels of output image
-        self.transform_S = get_transform(self.opt, grayscale=(input_nc == 1))
+        self.transform_S = get_transform(self.opt, grayscale=(input_nc == 1)) # maybe method=Image.BILINEAR instead of BICUBIC
         self.transform_T = get_transform(self.opt, grayscale=(output_nc == 1))
 
     def __getitem__(self, index):
@@ -72,3 +72,6 @@ class UnalignedDataset(BaseDataset):
         we take a maximum of
         """
         return max(self.S_size, self.T_size)
+
+    def __class_count__(self):
+        return 5

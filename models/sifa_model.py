@@ -60,28 +60,47 @@ class SIFA(BaseModel):
         D_P : Discriminator Mask(discriminates mask of S and T)
         """
 
-        self.netE = networks.define_E(opt.encoder_input_nc, opt.encoder_output_nc, opt.ngf, opt.netE, opt.norm,
-                                      not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
+        self.netE = networks.define_G(input_nc=1,
+                                      ngf=16, netG='encoder',
+                                      norm = 'batch', dropout_rate=opt.dropout_rate,
+                                      init_type=opt.init_type, init_gain=opt.init_gain,
+                                      gpu_ids=self.gpu_ids)
 
-        self.netC = networks.define_C(opt.seg_input_nc, opt.seg_output_nc, opt.netC, opt.norm,
-                                      not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
+        self.netC = networks.define_C(input_nc=512, num_classes=opt.num_classes,
+                                      netC='basic',
+                                      norm='none', dropout_rate=opt.dropout_rate,
+                                      init_type=opt.init_type, init_gain=opt.init_gain,
+                                      gpu_ids=self.gpu_ids)
 
         if self.isTrain: # define generator_T, decoder and discriminators
-            self.netG_T = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG_T, opt.norm,
-                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
+            self.netG_T = networks.define_G(input_nc=1, output_nc=1,
+                                            ngf=32, netG='resnet_9blocks',
+                                            norm='instance', dropout_rate=opt.dropout_rate,
+                                            init_type=opt.init_type, init_gain=opt.init_gain,
+                                            gpu_ids=self.gpu_ids)
 
-            self.netU = networks.define_G(opt.decoder_input_nc, opt.decoder_output_nc, opt.netDecoder, opt.norm,
-                                          not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
+            self.netU = networks.define_G(input_nc=512, output_nc=1,
+                                          ngf=32, netG='decoder',
+                                          norm='instance', dropout_rate=opt.dropout_rate,
+                                          init_type=opt.init_type, init_gain=opt.init_gain,
+                                          gpu_ids=self.gpu_ids)
 
-            self.netD_T = networks.define_D(opt.input_nc, opt.ndf, opt.netD,
-                                            opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
+            # ndf = opt.ndf = 64
+            self.netD_T = networks.define_D(input_nc=1, ndf=64,
+                                            netD='basic',
+                                            norm='instance', init_type=opt.init_type, init_gain=opt.init_gain,
+                                            gpu_ids=elf.gpu_ids)
 
             # Discriminator_S i.e with an auxiliary o/p
-            self.netD_S = networks.define_D(opt.output_nc, opt.ndf, opt.netD,
-                                            opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
+            self.netD_S = networks.define_D(input_nc=1, ndf=64,
+                                            netD='aux',
+                                            norm='instance', init_type=opt.init_type, init_gain=opt.init_gain,
+                                            gpu_ids=self.gpu_ids)
 
-            self.netD_P = networks.define_D(opt.output_mask_nc, opt.ndf, opt.netD,
-                                            opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
+            self.netD_P = networks.define_D(input_nc=5, ndf=64,
+                                            netD='basic',
+                                            norm='instance', init_type=opt.init_type, init_gain=opt.init_gain,
+                                            gpu_ids=self.gpu_ids)
 
 
         if self.isTrain:
@@ -89,7 +108,7 @@ class SIFA(BaseModel):
             self.fake_T_pool = ImagePool(opt.pool_size) # create image buffer to store previously generated images
             #define loss functions
             self.criterionGAN = networks.GANLoss(opt.gan_mode).to(self.device)  # define GAN loss.
-            self.criterionCycle = torch.nn.L1Loss().to(self.device)
+            self.criterionCycle = torch.nn.L1Loss().to(self.device) # Not sure about gpu activity
             self.criterionSeg_Dice = networks.DICELoss(num_classes=5).to(self.device) # num_classes = opt.num_classes
             self.criterionSeg_CE = networks.WCELoss(num_classes=5).to(self.device) # num_classes = opt.num_classes
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
@@ -119,7 +138,7 @@ class SIFA(BaseModel):
         self.real_T = input['T' if stoT else 'S'].to(self.device)
         self.gt_S = input['gt_S' if stoT else 'gt_T'].to(self.device)
         self.gt_T = input['gt_T' if stoT else 'gt_S'].to(self.device)
-        
+
         self.image_paths = input['S_paths' if StoT else 'T_paths']
 
 

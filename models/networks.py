@@ -106,7 +106,7 @@ def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[]):
     return net
 
 
-def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, init_type='normal', init_gain=0.02, gpu_ids=[]):
+def define_G(input_nc, output_nc=0, ngf=32, netG='resnet_9blocks', norm='batch', dropout_rate=0.75, init_type='normal', init_gain=0.02, gpu_ids=[]):
     """Create a generator
     Parameters:
         input_nc (int) -- the number of channels in input images
@@ -114,7 +114,7 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
         ngf (int) -- the number of filters in the last conv layer
         netG (str) -- the architecture's name: resnet_9blocks | resnet_6blocks
         norm (str) -- the name of normalization layers used in the network: batch | instance | none
-        use_dropout (bool) -- if use dropout layers.
+        dropout_rate(float) -- fraction of dropout : 0.75(default)
         init_type (str)    -- the name of our initialization method.
         init_gain (float)  -- scaling factor for normal, xavier and orthogonal.
         gpu_ids (int list) -- which GPUs the network runs on: e.g., 0,1,2
@@ -129,11 +129,13 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
     norm_layer = get_norm_layer(norm_type=norm)
 
     if netG == 'resnet_9blocks':
-        net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=9, n_downsampling=2, n_upsampling=2)
+        net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, dropout_rate=0, n_blocks=9, n_downsampling=2, n_upsampling=2)
     elif netG == 'resnet_6blocks':
-        net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=6, n_downsampling=2, n_upsampling=2)
-    elif netG == 'resnet_4blocks':
-        net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=4, n_downsampling=0, n)
+        net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, dropout_rate=dropout_rate, n_blocks=6, n_downsampling=2, n_upsampling=2)
+    elif netG == 'decoder':
+        net = ResnetDecoder(input_nc, output_nc, ngf, norm_layer=norm_layer, dropout_rate=dropout_rate, n_blocks=4, n_downsampling=0, n_upsampling=3)
+    elif netG == 'encoder':
+        net = ResnetEncoder(input_nc, ngf, norm_layer=norm_layer, dropout_rate=dropout_rate)
     else:
         raise NotImplementedError('Generator model name [%s] is not recognized' % netG)
     return init_net(net, init_type, init_gain, gpu_ids)
@@ -144,7 +146,7 @@ def define_D(input_nc, ndf, netD, n_layers_D=3, norm='batch', init_type='normal'
     Parameters:
         input_nc (int)     -- the number of channels in input images
         ndf (int)          -- the number of filters in the first conv layer
-        netD (str)         -- the architecture's name: basic | n_layers | pixel
+        netD (str)         -- the architecture's name: basic | aux | n_layers | pixel
         n_layers_D (int)   -- the number of conv layers in the discriminator; effective when netD=='n_layers'
         norm (str)         -- the type of normalization layers used in the network.
         init_type (str)    -- the name of the initialization method.
@@ -165,7 +167,7 @@ def define_D(input_nc, ndf, netD, n_layers_D=3, norm='batch', init_type='normal'
     """
     net = None
     norm_layer = get_norm_layer(norm_type=norm)
-
+    
     if netD == 'basic':  # default PatchGAN classifier
         net = NLayerDiscriminator(input_nc, ndf, n_layers=3, norm_layer=norm_layer)
     elif netD == 'aux': # default PatchGAN with an auxiliary classifier
@@ -179,48 +181,70 @@ def define_D(input_nc, ndf, netD, n_layers_D=3, norm='batch', init_type='normal'
     return init_net(net, init_type, init_gain, gpu_ids)
 
 
-def define_E(input_nc, output_nc, ngf, netE='default', norm='batch', use_dropout=True, init_type='normal', init_gain=0.02, gpu_ids=[]):
-    """Create an encoder
+
+def define_C(input_nc, num_classes, netC='basic', norm='none', dropout_rate=0.75, init_type='normal', init_gain=0.02, gpu_ids=[]):
+    """Create a Pixel Classifier (for Segmentation)
     Parameters:
         input_nc (int) -- the number of channels in input images
-        output_nc (int) -- the number of channels in output images
         ngf (int) -- the number of filters in the last conv layer
-        netE (str) -- the architecture's name: 'default' | X mods ... X
         norm (str) -- the name of normalization layers used in the network: batch | instance | none
-        use_dropout (bool) -- if use dropout layers.
+        dropout_rate(float) -- fraction of dropout : 0.75(default)
         init_type (str)    -- the name of our initialization method.
         init_gain (float)  -- scaling factor for normal, xavier and orthogonal.
         gpu_ids (int list) -- which GPUs the network runs on: e.g., 0,1,2
-    Returns an encoder
-    Our current implementation provides these encoders:
+    Returns a generator
+    Our current implementation provides these generators:
 
-        Resnet-based encoder: [
-            Resnet-based encoder consists of several Resnet blocks between a few downsampling,upsampling and occasional maxpool operations.
-    The encoder has been initialized by <init_net>. It uses RELU for non-linearity.
+        Resnet-based generator: [resnet_6blocks] (with 6 Resnet blocks) and [resnet_9blocks] (with 9 Resnet blocks)
+            Resnet-based generator consists of several Resnet blocks between a few downsampling/upsampling operations.
+    The generator has been initialized by <init_net>. It uses RELU for non-linearity.
     """
     net = None
     norm_layer = get_norm_layer(norm_type=norm)
 
-    if netE == 'default':
-        net = ResnetEncoder(input_nc, output_nc, ngf, norm_layer=norm_layer,
-                            use_dropout=use_dropout, dropout_rate=opt.dropout_rate)
+    if netC == 'basic':
+        net = Classifier(input_nc, num_classes, norm_layer=norm_layer, dropout_rate=dropout_rate)
+    elif netC == 'atrous': # Yet to finish
+        net = Classifier(input_nc, num_classes, norm_layer=norm_layer, dropout_rate=dropout_rate)
     else:
-        raise NotImplementedError('Encoder model name [%s] is not recognized' % netE)
+        raise NotImplementedError('Classifier model name [%s] is not recognized' % netC)
     return init_net(net, init_type, init_gain, gpu_ids)
+
+class Classifier(nn.Module):
+    """Basic Convolutional Classifier consisting of a simple convolution and an upscaling block."""
+
+    def __init__(self, input_nc, num_classes=5, norm_layer=Identity, dropout_rate=0.75) :
+        super(Classifier, self).__init__()
+        if type(norm_layer) == functools.partial:
+            use_bias = norm_layer.func == nn.InstanceNorm2d
+        else:
+            use_bias = norm_layer == nn.InstanceNorm2d
+
+        ngf = num_classes
+        model = [nn.ReflectionPad2d(1),
+                 nn.Conv2d(input_ch, ngf, kernel_size=1, padding=0, bias=use_bias),
+                 nn.Dropout(p=dropout_rate),
+                 norm_layer(ngf),
+                 nn.ReLU(False)]
+
+        model += [nn.UpsamplingBilinear2d(size=(256,256))]
+        self.model = nn.Sequential(*model)
+
+    def forward(self, input):
+        """Standard forward"""
+        return self.model(input)
 
 
 class ResnetEncoder(nn.Module):
     """Resnet-based encoder that consists of Resnet blocks between a few downsampling, upsampling and occasional maxpool operations.
     We wrote the code to identically resemble the tensorflow encoder network and as given in the paper."""
 
-    def __init__(self, input_nc, output_nc, ngf=16 , norm_layer=nn.BatchNorm2d, use_dropout=True, dropout_rate=0.75, padding_type='zero'):
+    def __init__(self, input_nc, ngf=16 , norm_layer=nn.BatchNorm2d, dropout_rate=0.75, padding_type='zero'):
         """Construct a Resnet-based encoder
         Parameters:
             input_nc (int)      -- the number of channels in input images
-            output_nc (int)     -- the number of channels in output images
             ngf (int)           -- the number of filters in the last conv layer
             norm_layer          -- normalization layer
-            use_dropout (bool)  -- if use dropout layers
             dropout_rate(float) -- fraction of dropout : 0.75(default)
         """
 
@@ -232,55 +256,55 @@ class ResnetEncoder(nn.Module):
 
         # C16
         model = [nn.ReflectionPad2d(1),
-                 nn.Conv2d(input_ch, ngf, kernel_size=7, padding=0, bias=use_bias),
+                 nn.Conv2d(input_nc, ngf, kernel_size=7, padding=0, bias=use_bias),
                  nn.Dropout(p=dropout_rate),
                  norm_layer(ngf),
                  nn.ReLU(True)]
 
         # R16, M
         model += [ResidualBlock(ngf, ngf, padding_type=padding_type, norm_layer=norm_layer,
-                                use_dropout=use_dropout, use_bias=use_bias, dropout_rate=dropout_rate),
+                                dropout_rate=dropout_rate, use_bias=use_bias),
                   nn.MaxPool2d(kernel_size=2, stride=2, padding=1)]
 
         # R32, M
         model += [ResidualBlock(ngf, ngf*2, padding_type=padding_type, norm_layer=norm_layer,
-                                use_dropout=use_dropout, use_bias=use_bias, dropout_rate=dropout_rate),
+                                dropout_rate=dropout_rate, use_bias=use_bias),
                   nn.MaxPool2d(kernel_size=2, stride=2, padding=1)]
 
         # R64_1, R64_2, M
         model += [ResidualBlock(ngf*2, ngf*4, padding_type=padding_type, norm_layer=norm_layer,
-                                use_dropout=use_dropout, use_bias=use_bias, dropout_rate=dropout_rate),
+                                dropout_rate=dropout_rate, use_bias=use_bias),
                   ResidualBlock(ngf*4, ngf*4, padding_type=padding_type, norm_layer=norm_layer,
-                                use_dropout=use_dropout, use_bias=use_bias, dropout_rate=dropout_rate),
+                                dropout_rate=dropout_rate, use_bias=use_bias),
                   nn.MaxPool2d(kernel_size=2, stride=2, padding=1)]
 
         # R128_1, R128_2
         model += [ResidualBlock(ngf*4, ngf*8, padding_type=padding_type, norm_layer=norm_layer,
-                                use_dropout=use_dropout, use_bias=use_bias, dropout_rate=dropout_rate),
+                                dropout_rate=dropout_rate, use_bias=use_bias),
                   ResidualBlock(ngf*8, ngf*8, padding_type=padding_type, norm_layer=norm_layer,
-                                use_dropout=use_dropout, use_bias=use_bias, dropout_rate=dropout_rate)]
+                                dropout_rate=dropout_rate, use_bias=use_bias)]
 
         # R256_1, R256_2, R256_3, R256_4
         model += [ResidualBlock(ngf*8, ngf*16, padding_type=padding_type, norm_layer=norm_layer,
-                                use_dropout=use_dropout, use_bias=use_bias, dropout_rate=dropout_rate),
+                                dropout_rate=dropout_rate, use_bias=use_bias),
                   ResidualBlock(ngf*16, ngf*16, padding_type=padding_type, norm_layer=norm_layer,
-                                use_dropout=use_dropout, use_bias=use_bias, dropout_rate=dropout_rate),
+                                dropout_rate=dropout_rate, use_bias=use_bias),
                   ResidualBlock(ngf*16, ngf*16, padding_type=padding_type, norm_layer=norm_layer,
-                                use_dropout=use_dropout, use_bias=use_bias, dropout_rate=dropout_rate),
+                                dropout_rate=dropout_rate, use_bias=use_bias),
                   ResidualBlock(ngf*16, ngf*16, padding_type=padding_type, norm_layer=norm_layer,
-                                use_dropout=use_dropout, use_bias=use_bias, dropout_rate=dropout_rate)]
+                                dropout_rate=dropout_rate, use_bias=use_bias)]
 
         # R512_1, R512_2
         model += [ResidualBlock(ngf*16, ngf*32, padding_type=padding_type, norm_layer=norm_layer,
-                                use_dropout=use_dropout, use_bias=use_bias, dropout_rate=dropout_rate),
+                                dropout_rate=dropout_rate, use_bias=use_bias),
                   ResidualBlock(ngf*32, ngf*32, padding_type=padding_type, norm_layer=norm_layer,
-                                use_dropout=use_dropout, use_bias=use_bias, dropout_rate=dropout_rate)]
+                                dropout_rate=dropout_rate, use_bias=use_bias)]
 
         # D512_1, D512_2
         model += [DilatedResidualBlock(ngf*32, ngf*32, padding_type=padding_type, norm_layer=norm_layer,
-                                use_dropout=use_dropout, use_bias=use_bias, dropout_rate=dropout_rate),
+                                dropout_rate=dropout_rate, use_bias=use_bias),
                   DilatedResidualBlock(ngf*32, ngf*32, padding_type=padding_type, norm_layer=norm_layer,
-                                use_dropout=use_dropout, use_bias=use_bias, dropout_rate=dropout_rate)]
+                                dropout_rate=dropout_rate, use_bias=use_bias)]
 
         # C512_1, C512_2
         model += [nn.ReflectionPad2d(1),
@@ -307,14 +331,14 @@ class ResnetGenerator(nn.Module):
     We adapt Torch code and idea from Justin Johnson's neural style transfer project(https://github.com/jcjohnson/fast-neural-style)
     """
 
-    def __init__(self, input_nc, output_nc, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=6, n_downsampling=2, n_upsampling=2, padding_type='reflect'):
+    def __init__(self, input_nc, output_nc, ngf=32, norm_layer=nn.BatchNorm2d, dropout_rate=0, n_blocks=6, n_downsampling=2, n_upsampling=2, padding_type='zero'):
         """Construct a Resnet-based generator
         Parameters:
             input_nc (int)      -- the number of channels in input images
             output_nc (int)     -- the number of channels in output images
             ngf (int)           -- the number of filters in the last conv layer
             norm_layer          -- normalization layer
-            use_dropout (bool)  -- if use dropout layers
+            dropout_rate(float) -- fraction of dropout : 0.75(default)
             n_blocks (int)      -- the number of ResNet blocks
             padding_type (str)  -- the name of padding layer in conv layers: reflect | replicate | zero
         """
@@ -326,7 +350,7 @@ class ResnetGenerator(nn.Module):
             use_bias = norm_layer == nn.InstanceNorm2d
 
         model = [nn.ReflectionPad2d(3),
-                 nn.Conv2d(input_nc, ngf, kernel_size=7, padding=0, bias=use_bias),
+                 nn.Conv2d(input_nc, ngf, kernel_size=7, stride=1, padding=0, bias=use_bias),
                  norm_layer(ngf),
                  nn.ReLU(True)]
 
@@ -340,7 +364,7 @@ class ResnetGenerator(nn.Module):
         mult = (2 ** n_downsampling)
         for i in range(n_blocks):       # add ResNet blocks
 
-            model += [ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout, use_bias=use_bias)]
+            model += [ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, dropout_rate=dropout_rate, use_bias=use_bias)]
 
         for i in range(n_upsampling):  # add upsampling layers
             mult = 2 ** (n_upsampling - i)
@@ -360,11 +384,79 @@ class ResnetGenerator(nn.Module):
         """Standard forward"""
         return self.model(input)
 
+class ResnetDecoder(nn.Module):
+    """Resnet-based Decoder that consists of Resnet blocks between a few downsampling/upsampling operations.
+    We adapt Torch code and idea from Justin Johnson's neural style transfer project(https://github.com/jcjohnson/fast-neural-style)
+    """
+
+    def __init__(self, input_nc, output_nc, ngf=32, norm_layer=nn.BatchNorm2d, dropout_rate=0.75, n_blocks=6, n_downsampling=2, n_upsampling=2, padding_type='zero'):
+        """Construct a Resnet-based Decoder
+        Parameters:
+            input_nc (int)      -- the number of channels in input images
+            output_nc (int)     -- the number of channels in output images
+            ngf (int)           -- the number of filters in the last conv layer
+            norm_layer          -- normalization layer
+            dropout_rate(float) -- fraction of dropout : 0.75(default)
+            n_blocks (int)      -- the number of ResNet blocks
+            padding_type (str)  -- the name of padding layer in conv layers: reflect | replicate | zero
+        """
+        assert(n_blocks >= 0)
+        super(ResnetGenerator, self).__init__()
+        if type(norm_layer) == functools.partial:
+            use_bias = norm_layer.func == nn.InstanceNorm2d
+        else:
+            use_bias = norm_layer == nn.InstanceNorm2d
+
+        mult = 4
+
+        model = [nn.ReflectionPad2d(3),
+                 nn.Conv2d(input_nc, ngf * mult, kernel_size=3, stride=1, padding=0, bias=use_bias),
+                 norm_layer(ngf * mult),
+                 nn.ReLU(True)]
+
+        # # n_downsampling = 2
+        # for i in range(n_downsampling):  # add downsampling layers
+        #     mult = 2 ** i
+        #     model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=1, bias=use_bias),
+        #               norm_layer(ngf * mult * 2),
+        #               nn.ReLU(True)]
+
+        mult = (4)
+        for i in range(n_blocks):       # add ResNet blocks
+            model += [ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, dropout_rate=dropout_rate, use_bias=use_bias)]
+
+        mult = (2)
+        for i in range(1, n_upsampling):  # add upsampling layers
+
+            model += [nn.ConvTranspose2d(ngf * mult, ngf * mult,
+                                         kernel_size=3, stride=2,
+                                         padding=1, output_padding=1,
+                                         bias=use_bias),
+                      norm_layer(int(ngf * mult)),
+                      nn.ReLU(True)]
+
+        model += [nn.ConvTranspose2d(ngf * mult, int(ngf * mult / 2),
+                                     kernel_size=3, stride=2,
+                                     padding=1, output_padding=1,
+                                     bias=use_bias),
+                  norm_layer(int(ngf * mult / 2)),
+                  nn.ReLU(True)]
+
+        model += [nn.ReflectionPad2d(3)]
+        model += [nn.Conv2d(int(ngf * mult / 2), output_nc, kernel_size=7, padding=0)]
+        model += [nn.Tanh()]
+
+        self.model = nn.Sequential(*model)
+
+    def forward(self, input):
+        """Standard forward"""
+        return self.model(input)
+
 
 class ResidualBlock(nn.Module):
     """Define a Resnet block with variable channel convolutions"""
 
-    def __init__(self, dim_in, dim_out, padding_type, norm_layer, use_dropout, use_bias, dropout_rate=0.5):
+    def __init__(self, dim_in, dim_out, padding_type, norm_layer, dropout_rate, use_bias):
         """Initialize the Resnet block
         A resnet block is a conv block with skip connections
         We construct a conv block with build_conv_block function,
@@ -376,18 +468,17 @@ class ResidualBlock(nn.Module):
         self.dim_out = dim_out
         self.padding_type = padding_type
 
-        self.conv_block = self.build_conv_block(dim_in, dim_out, padding_type, norm_layer, use_dropout, use_bias, dropout_rate)
+        self.conv_block = self.build_conv_block(dim_in, dim_out, padding_type, norm_layer, dropout_rate, use_bias)
 
         self.channel_pad = !(dim_in == dim_out)
 
-    def build_conv_block(self, dim_in, dim_out, padding_type, norm_layer, use_dropout, use_bias, dropout_rate=0.5):
+    def build_conv_block(self, dim_in, dim_out, padding_type, norm_layer, dropout_rate, use_bias):
         """Construct a convolutional block.
         Parameters:
             dim (int)           -- the number of channels in the conv layer.
             padding_type (str)  -- the name of padding layer: reflect | replicate | zero
             norm_layer          -- normalization layer
-            use_dropout (bool)  -- if use dropout layers.
-            dropout_rate(float) -- fraction of dropout : 0.5(default)
+            dropout_rate(float) -- fraction of dropout : 0.75(default)
             use_bias (bool)     -- if the conv layer uses bias or not
         Returns a conv block (with a conv layer, a normalization layer, and a non-linearity layer (ReLU))
         """
@@ -402,9 +493,10 @@ class ResidualBlock(nn.Module):
         else:
             raise NotImplemesntedError('padding [%s] is not implemented' % padding_type)
 
-        conv_block += [nn.Conv2d(dim_in, dim_out, kernel_size=3, padding=p, bias=use_bias), norm_layer(dim), nn.ReLU(True)]
-        if use_dropout:
-            conv_block += [nn.Dropout(dropout_rate)]
+        conv_block += [nn.Conv2d(dim_in, dim_out, kernel_size=3, padding=p, bias=use_bias),
+                       norm_layer(dim),
+                       nn.ReLU(True),
+                       nn.Dropout(dropout_rate)]
 
         p = 0
         if padding_type == 'reflect':
@@ -432,7 +524,7 @@ class ResidualBlock(nn.Module):
 class DilatedResidualBlock(nn.Module):
     """Define a Resnet block with variable channel convolutions and additional kernel dilations"""
 
-    def __init__(self, dim_in, dim_out, padding_type, norm_layer, use_dropout, use_bias, dropout_rate=0.5):
+    def __init__(self, dim_in, dim_out, padding_type, norm_layer, dropout_rate, use_bias):
         """Initialize the Resnet block
         A resnet block is a conv block with skip connections
         We construct a conv block with build_conv_block function,
@@ -446,18 +538,17 @@ class DilatedResidualBlock(nn.Module):
 
         rate = 2 # dilation rate (defaul : 2)
 
-        self.conv_block = self.build_conv_block(dim_in, dim_out, rate, padding_type, norm_layer, use_dropout, use_bias, dropout_rate)
+        self.conv_block = self.build_conv_block(dim_in, dim_out, rate, padding_type, norm_layer, dropout_rate, use_bias)
 
         self.channel_pad = !(dim_in == dim_out)
 
-    def build_conv_block(self, dim_in, dim_out, rate, padding_type, norm_layer, use_dropout, use_bias, dropout_rate=0.5):
+    def build_conv_block(self, dim_in, dim_out, rate, padding_type, norm_layer, dropout_rate, use_bias):
         """Construct a convolutional block.
         Parameters:
             dim (int)           -- the number of channels in the conv layer.
             padding_type (str)  -- the name of padding layer: reflect | replicate | zero
             norm_layer          -- normalization layer
-            use_dropout (bool)  -- if use dropout layers.
-            dropout_rate(float) -- fraction of dropout : 0.5(default)
+            dropout_rate(float) -- fraction of dropout : 0.75(default)
             use_bias (bool)     -- if the conv layer uses bias or not
         Returns a conv block (with a conv layer, a normalization layer, and a non-linearity layer (ReLU))
         """
@@ -472,9 +563,10 @@ class DilatedResidualBlock(nn.Module):
         else:
             raise NotImplemesntedError('padding [%s] is not implemented' % padding_type)
 
-        conv_block += [nn.Conv2d(dim_in, dim_out, kernel_size=3, padding=p, bias=use_bias, dilation=rate), norm_layer(dim), nn.ReLU(True)]
-        if use_dropout:
-            conv_block += [nn.Dropout(dropout_rate)]
+        conv_block += [nn.Conv2d(dim_in, dim_out, kernel_size=3, padding=p, bias=use_bias, dilation=rate),
+                       norm_layer(dim),
+                       nn.ReLU(True),
+                       nn.Dropout(dropout_rate)]
 
         p = 0
         if padding_type == 'reflect':
@@ -504,7 +596,7 @@ class DilatedResidualBlock(nn.Module):
 class ResnetBlock(nn.Module):
     """Define a Resnet block"""
 
-    def __init__(self, dim, padding_type, norm_layer, use_dropout, use_bias, dropout_rate=0.5):
+    def __init__(self, dim, padding_type, norm_layer, dropout_rate, use_bias):
         """Initialize the Resnet block
         A resnet block is a conv block with skip connections
         We construct a conv block with build_conv_block function,
@@ -512,16 +604,15 @@ class ResnetBlock(nn.Module):
         Original Resnet paper: https://arxiv.org/pdf/1512.03385.pdf
         """
         super(ResnetBlock, self).__init__()
-        self.conv_block = self.build_conv_block(dim, padding_type, norm_layer, use_dropout, use_bias, dropout_rate)
+        self.conv_block = self.build_conv_block(dim, padding_type, norm_layer, dropout_rate, use_bias)
 
-    def build_conv_block(self, dim, padding_type, norm_layer, use_dropout, use_bias, dropout_rate=0.5):
+    def build_conv_block(self, dim, padding_type, norm_layer, dropout_rate, use_bias):
         """Construct a convolutional block.
         Parameters:
             dim (int)           -- the number of channels in the conv layer.
             padding_type (str)  -- the name of padding layer: reflect | replicate | zero
             norm_layer          -- normalization layer
-            use_dropout (bool)  -- if use dropout layers.
-            dropout_rate(float) -- fraction of dropout : 0.5(default)
+            dropout_rate(float) -- fraction of dropout : 0.75(default)
             use_bias (bool)     -- if the conv layer uses bias or not
         Returns a conv block (with a conv layer, a normalization layer, and a non-linearity layer (ReLU))
         """
@@ -536,9 +627,10 @@ class ResnetBlock(nn.Module):
         else:
             raise NotImplemesntedError('padding [%s] is not implemented' % padding_type)
 
-        conv_block += [nn.Conv2d(dim, dim, kernel_size=3, padding=p, bias=use_bias), norm_layer(dim), nn.ReLU(True)]
-        if use_dropout:
-            conv_block += [nn.Dropout(dropout_rate)]
+        conv_block += [nn.Conv2d(dim, dim, kernel_size=3, padding=p, bias=use_bias),
+                       norm_layer(dim),
+                       nn.ReLU(True),
+                       nn.Dropout(dropout_rate)]
 
         p = 0
         if padding_type == 'reflect':
@@ -577,11 +669,12 @@ class NLayerDiscriminator(nn.Module):
             use_bias = norm_layer == nn.InstanceNorm2d
 
         kw = 4
-        padw = 1
-        sequence = [nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw), nn.LeakyReLU(0.2, True)]
+        padw = 2
+        sequence = [nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw),
+                    nn.LeakyReLU(0.2, True)]
         nf_mult = 1
         nf_mult_prev = 1
-        for n in range(1, n_layers):  # gradually increase the number of filters
+        for n in range(1, n_layers):  # gradually increase the number of filters (Loop count (n_layers - 1))
             nf_mult_prev = nf_mult
             nf_mult = min(2 ** n, 8)
             sequence += [
@@ -597,10 +690,11 @@ class NLayerDiscriminator(nn.Module):
             norm_layer(ndf * nf_mult),
             nn.LeakyReLU(0.2, True)
         ]
+        nf_mult_prev = nf_mult
         if is_aux:
-            sequence += [nn.Conv2d(ndf * nf_mult, 2, kernel_size=kw, stride=1, padding=padw)]  # output 2 channel prediction map
+            sequence += [nn.Conv2d(ndf * nf_mult_prev, 2, kernel_size=kw, stride=1, padding=padw)]  # output 2 channel prediction map
         else:
-            sequence += [nn.Conv2d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)]  # output 1 channel prediction map
+            sequence += [nn.Conv2d(ndf * nf_mult_prev, 1, kernel_size=kw, stride=1, padding=padw)]  # output 1 channel prediction map
         self.model = nn.Sequential(*sequence)
 
     def forward(self, input):

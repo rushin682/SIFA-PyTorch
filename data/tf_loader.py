@@ -31,9 +31,9 @@ def _decode_sample(slice_record):
     data_vol = tf.transpose(data_vol, perm=[2,0,1])
     # For converting the value range to be [-1 1] using the equation 2*[(x-x_min)/(x_max-x_min)]-1.
     # The values {-1.8, 4.4, -2.8, 3.2} need to be changed according to the statistics of specific datasets
-    if 'mr' in domain:
+    if 'mr' in slice_record:
         data_vol = tf.subtract(tf.multiply(tf.divide(tf.subtract(data_vol, -1.8), tf.subtract(4.4, -1.8)), 2.0), 1)
-    elif 'ct' in domain:
+    elif 'ct' in slice_record:
         data_vol = tf.subtract(tf.multiply(tf.divide(tf.subtract(data_vol, -2.8), tf.subtract(3.2, -2.8)), 2.0), 1)
 
 
