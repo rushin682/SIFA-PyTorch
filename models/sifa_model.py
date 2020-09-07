@@ -53,7 +53,7 @@ class SIFA(BaseModel):
         """
         G_T : Generator T (generates fake T),
         D_T : Discriminator T(discriminates real and fake T)
-        E : Encoder (Encodes real/fake T to feature space)
+        E : Encoder (Encodes real/fake T to a image/feature space for image/feature adaptation)
         C : Segmentor
         U : Decoder or Generator S (Generates fake S, recreates S)
         D_S : Discriminator S(discriminates real and fake S, also used for auxiliary feature space)
@@ -63,44 +63,46 @@ class SIFA(BaseModel):
         self.netE = networks.define_G(input_nc=1,
                                       ngf=16, netG='encoder',
                                       norm = 'batch', dropout_rate=opt.dropout_rate,
-                                      init_type=opt.init_type, init_gain=opt.init_gain,
-                                      gpu_ids=self.gpu_ids)
+                                      init_type=opt.init_type, init_gain=0.01,
+                                      gpu_ids=self.gpu_ids) # a-OK
 
         self.netC = networks.define_C(input_nc=512, num_classes=opt.num_classes,
                                       netC='basic',
                                       norm='none', dropout_rate=opt.dropout_rate,
-                                      init_type=opt.init_type, init_gain=opt.init_gain,
-                                      gpu_ids=self.gpu_ids)
+                                      init_type=opt.init_type, init_gain=0.01,
+                                      gpu_ids=self.gpu_ids) # a-OK
 
         if self.isTrain: # define generator_T, decoder and discriminators
             self.netG_T = networks.define_G(input_nc=1, output_nc=1,
                                             ngf=32, netG='resnet_9blocks',
                                             norm='instance', dropout_rate=opt.dropout_rate,
-                                            init_type=opt.init_type, init_gain=opt.init_gain,
-                                            gpu_ids=self.gpu_ids)
+                                            init_type=opt.init_type, init_gain=0.02,
+                                            gpu_ids=self.gpu_ids) # a-OK
 
             self.netU = networks.define_G(input_nc=512, output_nc=1,
                                           ngf=32, netG='decoder',
                                           norm='instance', dropout_rate=opt.dropout_rate,
-                                          init_type=opt.init_type, init_gain=opt.init_gain,
-                                          gpu_ids=self.gpu_ids)
+                                          init_type=opt.init_type, init_gain=0.02,
+                                          gpu_ids=self.gpu_ids) # a-OK
 
             # ndf = opt.ndf = 64
             self.netD_T = networks.define_D(input_nc=1, ndf=64,
                                             netD='basic',
-                                            norm='instance', init_type=opt.init_type, init_gain=opt.init_gain,
-                                            gpu_ids=elf.gpu_ids)
+                                            norm='instance',
+                                            init_type=opt.init_type, init_gain=0.02,
+                                            gpu_ids=self.gpu_ids) # a-OK
 
             # Discriminator_S i.e with an auxiliary o/p
             self.netD_S = networks.define_D(input_nc=1, ndf=64,
                                             netD='aux',
-                                            norm='instance', init_type=opt.init_type, init_gain=opt.init_gain,
-                                            gpu_ids=self.gpu_ids)
+                                            norm='instance', init_type=opt.init_type, init_gain=0.02,
+                                            gpu_ids=self.gpu_ids) # a-OK
 
+            # Discriminator_P i.e descriminate masks
             self.netD_P = networks.define_D(input_nc=5, ndf=64,
                                             netD='basic',
-                                            norm='instance', init_type=opt.init_type, init_gain=opt.init_gain,
-                                            gpu_ids=self.gpu_ids)
+                                            norm='instance', init_type=opt.init_type, init_gain=0.02,
+                                            gpu_ids=self.gpu_ids) # a-OK
 
 
         if self.isTrain:
@@ -257,8 +259,8 @@ class SIFA(BaseModel):
         self.classifier_loss = self.ce_loss_T + self.dice_loss_T + (self.loss_p_weight_value * self.loss_P)
 
         # Segmentation Loss = dice loss + cross-entropy loss
-        self.seg_loss = (0.1 * self.encoder_loss) + self.classifier_loss
-        self.seg_loss.backward()
+        self.loss_Seg = (0.1 * self.encoder_loss) + self.classifier_loss
+        self.loss_Seg.backward()
 
     def optimize_parameters(self):
         """Calculate losses, gradients, and update network weights; called in every training iteration"""

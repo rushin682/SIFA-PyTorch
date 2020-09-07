@@ -31,8 +31,9 @@ if __name__ == '__main__':
     opt = TrainOptions().parse()   # get training options
     dataset = create_dataset(opt)  # create a dataset given opt.dataset_mode and other options
     dataset_size = len(dataset)    # get the number of images in the dataset.
-    num_classes = class_count(dataset)
+    opt.num_classes = dataset.class_count() # Not Sure if this will work, but I hope it does.
     print('The number of training images = %d' % dataset_size)
+    print('The number of classes = %d' % num_classes)
 
     model = create_model(opt)      # create a model given opt.model and other options
     model.setup(opt)               # regular setup: load and print networks; create schedulers

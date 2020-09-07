@@ -1,9 +1,13 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn import init
 import functools
 from torch.optim import lr_scheduler
 
+# Summary/Testing of modules
+from torchsummary import summary
+import argparse
 ###############################################################################
 # Helper Functions
 ###############################################################################
@@ -28,7 +32,6 @@ def get_norm_layer(norm_type='instance'):
     else:
         raise NotImplementedError('normalization layer [%s] is not found' % norm_type)
     return norm_layer
-
 
 def get_scheduler(optimizer, opt):
     """Return a learning rate scheduler
@@ -55,7 +58,6 @@ def get_scheduler(optimizer, opt):
     else:
         return NotImplementedError('learning rate policy [%s] is not implemented', opt.lr_policy)
     return scheduler
-
 
 def init_weights(net, init_type='normal', init_gain=0.02):
     """Initialize network weights.
@@ -88,7 +90,6 @@ def init_weights(net, init_type='normal', init_gain=0.02):
     print('initialize network with %s' % init_type)
     net.apply(init_func)  # apply the initialization function
 
-
 def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[]):
     """Initialize a network: 1. register CPU/GPU device (with multi-GPU support); 2. initialize the network weights
     Parameters:
@@ -105,6 +106,9 @@ def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[]):
     init_weights(net, init_type, init_gain=init_gain)
     return net
 
+###############################################################################
+# Network Functions
+###############################################################################
 
 def define_G(input_nc, output_nc=0, ngf=32, netG='resnet_9blocks', norm='batch', dropout_rate=0.75, init_type='normal', init_gain=0.02, gpu_ids=[]):
     """Create a generator
@@ -126,20 +130,19 @@ def define_G(input_nc, output_nc=0, ngf=32, netG='resnet_9blocks', norm='batch',
     The generator has been initialized by <init_net>. It uses RELU for non-linearity.
     """
     net = None
-    norm_layer = get_norm_layer(norm_type=norm)
+    norm_layer = get_norm_layer(norm_type=norm) #nn.BatchNorm2d or nn.InstanceNorm2d
 
     if netG == 'resnet_9blocks':
         net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, dropout_rate=0, n_blocks=9, n_downsampling=2, n_upsampling=2)
     elif netG == 'resnet_6blocks':
-        net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, dropout_rate=dropout_rate, n_blocks=6, n_downsampling=2, n_upsampling=2)
+        net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, dropout_rate=0, n_blocks=6, n_downsampling=2, n_upsampling=2)
     elif netG == 'decoder':
         net = ResnetDecoder(input_nc, output_nc, ngf, norm_layer=norm_layer, dropout_rate=dropout_rate, n_blocks=4, n_downsampling=0, n_upsampling=3)
     elif netG == 'encoder':
-        net = ResnetEncoder(input_nc, ngf, norm_layer=norm_layer, dropout_rate=dropout_rate)
+        net = ResnetEncoder(input_nc, ngf, norm_layer=norm_layer, dropout_rate=dropout_rate) # fin
     else:
         raise NotImplementedError('Generator model name [%s] is not recognized' % netG)
     return init_net(net, init_type, init_gain, gpu_ids)
-
 
 def define_D(input_nc, ndf, netD, n_layers_D=3, norm='batch', init_type='normal', init_gain=0.02, gpu_ids=[]):
     """Create a discriminator
@@ -167,7 +170,7 @@ def define_D(input_nc, ndf, netD, n_layers_D=3, norm='batch', init_type='normal'
     """
     net = None
     norm_layer = get_norm_layer(norm_type=norm)
-    
+
     if netD == 'basic':  # default PatchGAN classifier
         net = NLayerDiscriminator(input_nc, ndf, n_layers=3, norm_layer=norm_layer)
     elif netD == 'aux': # default PatchGAN with an auxiliary classifier
@@ -179,8 +182,6 @@ def define_D(input_nc, ndf, netD, n_layers_D=3, norm='batch', init_type='normal'
     else:
         raise NotImplementedError('Discriminator model name [%s] is not recognized' % netD)
     return init_net(net, init_type, init_gain, gpu_ids)
-
-
 
 def define_C(input_nc, num_classes, netC='basic', norm='none', dropout_rate=0.75, init_type='normal', init_gain=0.02, gpu_ids=[]):
     """Create a Pixel Classifier (for Segmentation)
@@ -210,10 +211,14 @@ def define_C(input_nc, num_classes, netC='basic', norm='none', dropout_rate=0.75
         raise NotImplementedError('Classifier model name [%s] is not recognized' % netC)
     return init_net(net, init_type, init_gain, gpu_ids)
 
+###############################################################################
+# Network Modules
+###############################################################################
+
 class Classifier(nn.Module):
     """Basic Convolutional Classifier consisting of a simple convolution and an upscaling block."""
 
-    def __init__(self, input_nc, num_classes=5, norm_layer=Identity, dropout_rate=0.75) :
+    def __init__(self, input_nc, num_classes=5, norm_layer=nn.Identity, dropout_rate=0.75) :
         super(Classifier, self).__init__()
         if type(norm_layer) == functools.partial:
             use_bias = norm_layer.func == nn.InstanceNorm2d
@@ -222,9 +227,9 @@ class Classifier(nn.Module):
 
         ngf = num_classes
         model = [nn.ReflectionPad2d(1),
-                 nn.Conv2d(input_ch, ngf, kernel_size=1, padding=0, bias=use_bias),
+                 nn.Conv2d(input_nc, num_classes, kernel_size=1, padding=0, bias=use_bias),
                  nn.Dropout(p=dropout_rate),
-                 norm_layer(ngf),
+                 norm_layer(num_classes),
                  nn.ReLU(False)]
 
         model += [nn.UpsamplingBilinear2d(size=(256,256))]
@@ -234,18 +239,18 @@ class Classifier(nn.Module):
         """Standard forward"""
         return self.model(input)
 
-
 class ResnetEncoder(nn.Module):
     """Resnet-based encoder that consists of Resnet blocks between a few downsampling, upsampling and occasional maxpool operations.
     We wrote the code to identically resemble the tensorflow encoder network and as given in the paper."""
 
-    def __init__(self, input_nc, ngf=16 , norm_layer=nn.BatchNorm2d, dropout_rate=0.75, padding_type='zero'):
+    def __init__(self, input_nc, ngf=16, norm_layer=nn.BatchNorm2d, dropout_rate=0.75, padding_type='zero'):
         """Construct a Resnet-based encoder
         Parameters:
             input_nc (int)      -- the number of channels in input images
             ngf (int)           -- the number of filters in the last conv layer
             norm_layer          -- normalization layer
             dropout_rate(float) -- fraction of dropout : 0.75(default)
+            padding_type(string)-- zero, meaning add '0' as padding to get o/p of same dimension a.k.a 'CONSTANT'
         """
 
         super(ResnetEncoder, self).__init__()
@@ -264,67 +269,82 @@ class ResnetEncoder(nn.Module):
         # R16, M
         model += [ResidualBlock(ngf, ngf, padding_type=padding_type, norm_layer=norm_layer,
                                 dropout_rate=dropout_rate, use_bias=use_bias),
+                  nn.ReLU(True),
                   nn.MaxPool2d(kernel_size=2, stride=2, padding=1)]
+
 
         # R32, M
         model += [ResidualBlock(ngf, ngf*2, padding_type=padding_type, norm_layer=norm_layer,
                                 dropout_rate=dropout_rate, use_bias=use_bias),
+                  nn.ReLU(True),
                   nn.MaxPool2d(kernel_size=2, stride=2, padding=1)]
 
         # R64_1, R64_2, M
         model += [ResidualBlock(ngf*2, ngf*4, padding_type=padding_type, norm_layer=norm_layer,
                                 dropout_rate=dropout_rate, use_bias=use_bias),
+                  nn.ReLU(True),
                   ResidualBlock(ngf*4, ngf*4, padding_type=padding_type, norm_layer=norm_layer,
                                 dropout_rate=dropout_rate, use_bias=use_bias),
-                  nn.MaxPool2d(kernel_size=2, stride=2, padding=1)]
+                  nn.ReLU(True),
+                  nn.MaxPool2d(kernel_size=2, stride=2, padding=0)]
 
         # R128_1, R128_2
         model += [ResidualBlock(ngf*4, ngf*8, padding_type=padding_type, norm_layer=norm_layer,
                                 dropout_rate=dropout_rate, use_bias=use_bias),
+                  nn.ReLU(True),
                   ResidualBlock(ngf*8, ngf*8, padding_type=padding_type, norm_layer=norm_layer,
-                                dropout_rate=dropout_rate, use_bias=use_bias)]
+                                dropout_rate=dropout_rate, use_bias=use_bias),
+                  nn.ReLU(True)]
 
         # R256_1, R256_2, R256_3, R256_4
         model += [ResidualBlock(ngf*8, ngf*16, padding_type=padding_type, norm_layer=norm_layer,
                                 dropout_rate=dropout_rate, use_bias=use_bias),
+                  nn.ReLU(True),
                   ResidualBlock(ngf*16, ngf*16, padding_type=padding_type, norm_layer=norm_layer,
                                 dropout_rate=dropout_rate, use_bias=use_bias),
+                  nn.ReLU(True),
                   ResidualBlock(ngf*16, ngf*16, padding_type=padding_type, norm_layer=norm_layer,
                                 dropout_rate=dropout_rate, use_bias=use_bias),
+                  nn.ReLU(True),
                   ResidualBlock(ngf*16, ngf*16, padding_type=padding_type, norm_layer=norm_layer,
-                                dropout_rate=dropout_rate, use_bias=use_bias)]
+                                dropout_rate=dropout_rate, use_bias=use_bias),
+                  nn.ReLU(True)]
 
         # R512_1, R512_2
         model += [ResidualBlock(ngf*16, ngf*32, padding_type=padding_type, norm_layer=norm_layer,
                                 dropout_rate=dropout_rate, use_bias=use_bias),
+                  nn.ReLU(True),
                   ResidualBlock(ngf*32, ngf*32, padding_type=padding_type, norm_layer=norm_layer,
-                                dropout_rate=dropout_rate, use_bias=use_bias)]
+                                dropout_rate=dropout_rate, use_bias=use_bias),
+                  nn.ReLU(True)]
 
         # D512_1, D512_2
         model += [DilatedResidualBlock(ngf*32, ngf*32, padding_type=padding_type, norm_layer=norm_layer,
                                 dropout_rate=dropout_rate, use_bias=use_bias),
+                  nn.ReLU(True),
                   DilatedResidualBlock(ngf*32, ngf*32, padding_type=padding_type, norm_layer=norm_layer,
-                                dropout_rate=dropout_rate, use_bias=use_bias)]
+                                dropout_rate=dropout_rate, use_bias=use_bias),
+                  nn.ReLU(True)]
 
         # C512_1, C512_2
         model += [nn.ReflectionPad2d(1),
                   nn.Conv2d(ngf*32, ngf*32, kernel_size=3, padding=0, bias=use_bias),
                   nn.Dropout(p=dropout_rate),
-                  norm_layer(ngf),
+                  norm_layer(ngf*32),
                   nn.ReLU(True),
 
                   nn.ReflectionPad2d(1),
                   nn.Conv2d(ngf*32, ngf*32, kernel_size=3, padding=0, bias=use_bias),
                   nn.Dropout(p=dropout_rate),
-                  norm_layer(ngf),
+                  norm_layer(ngf*32),
                   nn.ReLU(True)]
 
         self.model = nn.Sequential(*model)
 
     def forward(self, input):
         """Standard forward"""
-        return self.model(input)
 
+        return self.model(input)
 
 class ResnetGenerator(nn.Module):
     """Resnet-based generator that consists of Resnet blocks between a few downsampling/upsampling operations.
@@ -359,12 +379,13 @@ class ResnetGenerator(nn.Module):
             mult = 2 ** i
             model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=1, bias=use_bias),
                       norm_layer(ngf * mult * 2),
-                      nn.ReLU(True)]
+                      nn.ReLU(True)] # current filters -> 128
 
-        mult = (2 ** n_downsampling)
+        mult = (2 ** n_downsampling) # 2^2 = 4
         for i in range(n_blocks):       # add ResNet blocks
 
-            model += [ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, dropout_rate=dropout_rate, use_bias=use_bias)]
+            model += [ResidualBlock(ngf * mult, ngf * mult, padding_type=padding_type, norm_layer=norm_layer, dropout_rate=dropout_rate, use_bias=use_bias),
+                      nn.ReLU(True)]
 
         for i in range(n_upsampling):  # add upsampling layers
             mult = 2 ** (n_upsampling - i)
@@ -376,13 +397,16 @@ class ResnetGenerator(nn.Module):
                       nn.ReLU(True)]
         model += [nn.ReflectionPad2d(3)]
         model += [nn.Conv2d(ngf, output_nc, kernel_size=7, padding=0)]
-        model += [nn.Tanh()]
+        # model += [nn.Tanh()]
 
         self.model = nn.Sequential(*model)
 
     def forward(self, input):
         """Standard forward"""
-        return self.model(input)
+        out = input + self.model(input)
+
+        out = F.tanh(out)
+        return out
 
 class ResnetDecoder(nn.Module):
     """Resnet-based Decoder that consists of Resnet blocks between a few downsampling/upsampling operations.
@@ -401,7 +425,7 @@ class ResnetDecoder(nn.Module):
             padding_type (str)  -- the name of padding layer in conv layers: reflect | replicate | zero
         """
         assert(n_blocks >= 0)
-        super(ResnetGenerator, self).__init__()
+        super(ResnetDecoder, self).__init__()
         if type(norm_layer) == functools.partial:
             use_bias = norm_layer.func == nn.InstanceNorm2d
         else:
@@ -409,49 +433,43 @@ class ResnetDecoder(nn.Module):
 
         mult = 4
 
-        model = [nn.ReflectionPad2d(3),
-                 nn.Conv2d(input_nc, ngf * mult, kernel_size=3, stride=1, padding=0, bias=use_bias),
+        model = [nn.Conv2d(input_nc, ngf * mult, kernel_size=3, stride=1, padding=1, bias=use_bias),
                  norm_layer(ngf * mult),
                  nn.ReLU(True)]
 
-        # # n_downsampling = 2
-        # for i in range(n_downsampling):  # add downsampling layers
-        #     mult = 2 ** i
-        #     model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=1, bias=use_bias),
-        #               norm_layer(ngf * mult * 2),
-        #               nn.ReLU(True)]
-
         mult = (4)
         for i in range(n_blocks):       # add ResNet blocks
-            model += [ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, dropout_rate=dropout_rate, use_bias=use_bias)]
+            model += [ResidualBlock(ngf * mult, ngf * mult, padding_type=padding_type, norm_layer=norm_layer, dropout_rate=dropout_rate, use_bias=use_bias)]
 
-        mult = (2)
-        for i in range(1, n_upsampling):  # add upsampling layers
+        # 128 -> 64
+        model += [nn.ConvTranspose2d(ngf * mult, int(ngf * mult / 2), kernel_size=3, stride=2, padding=1, output_padding=1, bias=use_bias),
+                  norm_layer(int(ngf * mult / 2)),
+                  nn.ReLU(True)]
 
-            model += [nn.ConvTranspose2d(ngf * mult, ngf * mult,
-                                         kernel_size=3, stride=2,
-                                         padding=1, output_padding=1,
-                                         bias=use_bias),
-                      norm_layer(int(ngf * mult)),
-                      nn.ReLU(True)]
+        # 64 -> 64
+        model += [nn.ConvTranspose2d(int(ngf * mult / 2), int(ngf * mult / 2), kernel_size=3, stride=2, padding=1, output_padding=1, bias=use_bias),
+                  norm_layer(int(ngf * mult / 2)),
+                  nn.ReLU(True)]
 
-        model += [nn.ConvTranspose2d(ngf * mult, int(ngf * mult / 2),
-                                     kernel_size=3, stride=2,
-                                     padding=1, output_padding=1,
-                                     bias=use_bias),
+        mult = int(mult / 2) # (2)
+
+        # 64 -> 32
+        model += [nn.ConvTranspose2d(ngf * mult, int(ngf * mult / 2), kernel_size=3, stride=2, padding=1, output_padding=1, bias=use_bias),
                   norm_layer(int(ngf * mult / 2)),
                   nn.ReLU(True)]
 
         model += [nn.ReflectionPad2d(3)]
         model += [nn.Conv2d(int(ngf * mult / 2), output_nc, kernel_size=7, padding=0)]
-        model += [nn.Tanh()]
+        # model += [nn.Tanh()]
 
         self.model = nn.Sequential(*model)
 
-    def forward(self, input):
+    def forward(self, input, image):
         """Standard forward"""
-        return self.model(input)
+        out = image + self.model(input)
 
+        out = F.tanh(out)
+        return out
 
 class ResidualBlock(nn.Module):
     """Define a Resnet block with variable channel convolutions"""
@@ -463,14 +481,15 @@ class ResidualBlock(nn.Module):
         and implement skip connections in <forward> function.
         Original Resnet paper: https://arxiv.org/pdf/1512.03385.pdf
         """
-        super(ResnetBlock, self).__init__()
+        super(ResidualBlock, self).__init__()
         self.dim_in = dim_in
         self.dim_out = dim_out
+
         self.padding_type = padding_type
 
         self.conv_block = self.build_conv_block(dim_in, dim_out, padding_type, norm_layer, dropout_rate, use_bias)
 
-        self.channel_pad = !(dim_in == dim_out)
+        self.channel_pad = not (dim_in == dim_out)
 
     def build_conv_block(self, dim_in, dim_out, padding_type, norm_layer, dropout_rate, use_bias):
         """Construct a convolutional block.
@@ -489,14 +508,15 @@ class ResidualBlock(nn.Module):
         elif padding_type == 'replicate':
             conv_block += [nn.ReplicationPad2d(1)]
         elif padding_type == 'zero':
-            p = 1
+            p = 1 # Should it be 0?
         else:
             raise NotImplemesntedError('padding [%s] is not implemented' % padding_type)
 
         conv_block += [nn.Conv2d(dim_in, dim_out, kernel_size=3, padding=p, bias=use_bias),
-                       norm_layer(dim),
-                       nn.ReLU(True),
-                       nn.Dropout(dropout_rate)]
+                       nn.Dropout(p=dropout_rate),
+                       norm_layer(dim_out),
+                       nn.ReLU(True)
+                      ]
 
         p = 0
         if padding_type == 'reflect':
@@ -504,22 +524,26 @@ class ResidualBlock(nn.Module):
         elif padding_type == 'replicate':
             conv_block += [nn.ReplicationPad2d(1)]
         elif padding_type == 'zero':
-            p = 1
+            p = 1 # Should it be 0?
         else:
             raise NotImplementedError('padding [%s] is not implemented' % padding_type)
-        conv_block += [nn.Conv2d(dim_out, dim_out, kernel_size=3, padding=p, bias=use_bias), norm_layer(dim)]
+        conv_block += [nn.Conv2d(dim_out, dim_out, kernel_size=3, padding=p, bias=use_bias),
+                       nn.Dropout(p=dropout_rate),
+                       norm_layer(dim_out)]
 
         return nn.Sequential(*conv_block)
 
     def forward(self, x):
         """Forward function (with skip connections)"""
-        if self.channel_pad:
+
+        out = self.conv_block(x)
+
+        if self.channel_pad: # Probably not needed.
             padding = self.padding_type if (self.padding_type != 'zero') else 'constant'
             x = F.pad(x, (0,0,0,0,(self.dim_out-self.dim_in)//2, (self.dim_out-self.dim_in)//2), mode=padding)
 
-        out = x + self.conv_block(x)  # add skip connections
+        out = x + out  # add skip connections
         return out
-
 
 class DilatedResidualBlock(nn.Module):
     """Define a Resnet block with variable channel convolutions and additional kernel dilations"""
@@ -531,7 +555,7 @@ class DilatedResidualBlock(nn.Module):
         and implement skip connections in <forward> function.
         Original Resnet paper: https://arxiv.org/pdf/1512.03385.pdf
         """
-        super(ResnetBlock, self).__init__()
+        super(DilatedResidualBlock, self).__init__()
         self.dim_in = dim_in
         self.dim_out = dim_out
         self.padding_type = padding_type
@@ -540,7 +564,7 @@ class DilatedResidualBlock(nn.Module):
 
         self.conv_block = self.build_conv_block(dim_in, dim_out, rate, padding_type, norm_layer, dropout_rate, use_bias)
 
-        self.channel_pad = !(dim_in == dim_out)
+        self.channel_pad = not (dim_in == dim_out)
 
     def build_conv_block(self, dim_in, dim_out, rate, padding_type, norm_layer, dropout_rate, use_bias):
         """Construct a convolutional block.
@@ -559,14 +583,14 @@ class DilatedResidualBlock(nn.Module):
         elif padding_type == 'replicate':
             conv_block += [nn.ReplicationPad2d(1)]
         elif padding_type == 'zero':
-            p = 1
+            p = 2 # dilation padding (normal amount i.e 1 x 2)
         else:
             raise NotImplemesntedError('padding [%s] is not implemented' % padding_type)
 
         conv_block += [nn.Conv2d(dim_in, dim_out, kernel_size=3, padding=p, bias=use_bias, dilation=rate),
-                       norm_layer(dim),
-                       nn.ReLU(True),
-                       nn.Dropout(dropout_rate)]
+                       nn.Dropout(p=dropout_rate),
+                       norm_layer(dim_out),
+                       nn.ReLU(True)]
 
         p = 0
         if padding_type == 'reflect':
@@ -574,29 +598,31 @@ class DilatedResidualBlock(nn.Module):
         elif padding_type == 'replicate':
             conv_block += [nn.ReplicationPad2d(1)]
         elif padding_type == 'zero':
-            p = 1
+            p = 2 # dilation padding (normal amount i.e 1 x 2)
         else:
             raise NotImplementedError('padding [%s] is not implemented' % padding_type)
-        conv_block += [nn.Conv2d(dim_out, dim_out, kernel_size=3, padding=p, bias=use_bias, dilation=rate), norm_layer(dim)]
+        conv_block += [nn.Conv2d(dim_out, dim_out, kernel_size=3, padding=p, bias=use_bias, dilation=rate),
+                       nn.Dropout(p=dropout_rate),
+                       norm_layer(dim_out)]
 
         return nn.Sequential(*conv_block)
 
     def forward(self, x):
         """Forward function (with skip connections)"""
+
+        out = self.conv_block(x)
+
         if self.channel_pad:
             padding = self.padding_type if (self.padding_type != 'zero') else 'constant'
             x = F.pad(x, (0,0,0,0,(self.dim_out-self.dim_in)//2, (self.dim_out-self.dim_in)//2), mode=padding)
 
-        out = x + self.conv_block(x)  # add skip connections
+        out = x + out  # add skip connections
         return out
-
-
-
 
 class ResnetBlock(nn.Module):
     """Define a Resnet block"""
 
-    def __init__(self, dim, padding_type, norm_layer, dropout_rate, use_bias):
+    def __init__(self, dim, padding_type, norm_layer, use_dropout, use_bias):
         """Initialize the Resnet block
         A resnet block is a conv block with skip connections
         We construct a conv block with build_conv_block function,
@@ -604,15 +630,15 @@ class ResnetBlock(nn.Module):
         Original Resnet paper: https://arxiv.org/pdf/1512.03385.pdf
         """
         super(ResnetBlock, self).__init__()
-        self.conv_block = self.build_conv_block(dim, padding_type, norm_layer, dropout_rate, use_bias)
+        self.conv_block = self.build_conv_block(dim, padding_type, norm_layer, use_dropout, use_bias)
 
-    def build_conv_block(self, dim, padding_type, norm_layer, dropout_rate, use_bias):
+    def build_conv_block(self, dim, padding_type, norm_layer, use_dropout, use_bias):
         """Construct a convolutional block.
         Parameters:
             dim (int)           -- the number of channels in the conv layer.
             padding_type (str)  -- the name of padding layer: reflect | replicate | zero
             norm_layer          -- normalization layer
-            dropout_rate(float) -- fraction of dropout : 0.75(default)
+            use_dropout (bool)  -- if use dropout layers.
             use_bias (bool)     -- if the conv layer uses bias or not
         Returns a conv block (with a conv layer, a normalization layer, and a non-linearity layer (ReLU))
         """
@@ -625,12 +651,11 @@ class ResnetBlock(nn.Module):
         elif padding_type == 'zero':
             p = 1
         else:
-            raise NotImplemesntedError('padding [%s] is not implemented' % padding_type)
+            raise NotImplementedError('padding [%s] is not implemented' % padding_type)
 
-        conv_block += [nn.Conv2d(dim, dim, kernel_size=3, padding=p, bias=use_bias),
-                       norm_layer(dim),
-                       nn.ReLU(True),
-                       nn.Dropout(dropout_rate)]
+        conv_block += [nn.Conv2d(dim, dim, kernel_size=3, padding=p, bias=use_bias), norm_layer(dim), nn.ReLU(True)]
+        if use_dropout:
+            conv_block += [nn.Dropout(0.5)]
 
         p = 0
         if padding_type == 'reflect':
@@ -649,7 +674,6 @@ class ResnetBlock(nn.Module):
         """Forward function (with skip connections)"""
         out = x + self.conv_block(x)  # add skip connections
         return out
-
 
 class NLayerDiscriminator(nn.Module):
     """Defines a PatchGAN discriminator"""
@@ -674,7 +698,7 @@ class NLayerDiscriminator(nn.Module):
                     nn.LeakyReLU(0.2, True)]
         nf_mult = 1
         nf_mult_prev = 1
-        for n in range(1, n_layers):  # gradually increase the number of filters (Loop count (n_layers - 1))
+        for n in range(1, n_layers):  # gradually increase the number of filters (Loop count till (n_layers - 1))
             nf_mult_prev = nf_mult
             nf_mult = min(2 ** n, 8)
             sequence += [
@@ -691,6 +715,8 @@ class NLayerDiscriminator(nn.Module):
             nn.LeakyReLU(0.2, True)
         ]
         nf_mult_prev = nf_mult
+        # check after this
+
         if is_aux:
             sequence += [nn.Conv2d(ndf * nf_mult_prev, 2, kernel_size=kw, stride=1, padding=padw)]  # output 2 channel prediction map
         else:
@@ -700,7 +726,6 @@ class NLayerDiscriminator(nn.Module):
     def forward(self, input):
         """Standard forward."""
         return self.model(input)
-
 
 class PixelDiscriminator(nn.Module):
     """Defines a 1x1 PatchGAN discriminator (pixelGAN)"""
@@ -731,7 +756,6 @@ class PixelDiscriminator(nn.Module):
     def forward(self, input):
         """Standard forward."""
         return self.net(input)
-
 
 class GANLoss(nn.Module):
     """Define different GAN objectives.
@@ -794,8 +818,7 @@ class GANLoss(nn.Module):
                 loss = prediction.mean()
         return loss
 
-
-class DICELoss(nn.module):
+class DICELoss(nn.Module):
     """
     Define Dice Loss Objective.
     """
@@ -835,8 +858,7 @@ class DICELoss(nn.module):
 
         return 1 - 1.0 * dice / self.num_classes
 
-
-class WCELoss(nn.module):
+class WCELoss(nn.Module):
     """
     Define Weighted Cross Entropy Loss Objective.
     """
@@ -858,3 +880,130 @@ class WCELoss(nn.module):
         self.loss = nn.CrossEntropyLoss(weight=weights)
 
         return self.loss(logits, gt)
+
+
+###############################################################################
+# Summary Executable Functions
+###############################################################################
+
+class switch(object):
+    value = None
+    def __new__(class_, value):
+        class_.value = value
+        return True
+
+def case(*args):
+    return any((arg == switch.value for arg in args))
+
+class NetTester():
+
+    def __init__(self):
+        """Consider this as a temporary specific network tester.
+        I will make this an abstract class, so that one can add their torchsummary options here.
+        Parameters:
+            variables (if needed)
+            options     --      Switch case scenario (to choose what network to test)
+        """
+        options = ['encoder',
+           'segmentor',
+           'generator',
+           'decoder',
+           'discriminatorT',
+           'discriminatorS',
+           'discriminatorP'
+           ]
+
+        self.dropout_rate = 0.75
+        self.init_type = 'normal'
+        self.init_gain = 0.01
+        self.gpu_ids = ''
+
+        self.num_classes=5
+
+        print ("Welcome to the Network Tester :")
+        print (options)
+
+    def parse(self):
+        parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        parser.add_argument('--network', required=True, help='choose from the networks above. We will summarize the network for you')
+
+        return parser.parse_args()
+
+    def execute(self, n):
+        while switch(n):
+            if case('encoder'):
+                netE = define_G(input_nc=1,
+                                ngf=16, netG='encoder',
+                                norm = 'batch', dropout_rate=self.dropout_rate,
+                                init_type=self.init_type, init_gain=self.init_gain,
+                                gpu_ids=self.gpu_ids) # a-OK
+                summary(netE, input_size=(1, 256, 256))
+                break
+
+            if case('segmentor'):
+                netC = define_C(input_nc=512, num_classes=self.num_classes,
+                                netC='basic',
+                                norm='none', dropout_rate=self.dropout_rate,
+                                init_type=self.init_type, init_gain=0.01,
+                                gpu_ids=self.gpu_ids) # a-OK
+
+                summary(netC, input_size=(512, 32, 32))
+                break
+
+            if case('generator'):
+                netG_T = define_G(input_nc=1, output_nc=1,
+                                  ngf=32, netG='resnet_9blocks',
+                                  norm='instance', dropout_rate=self.dropout_rate,
+                                  init_type=self.init_type, init_gain=self.init_gain,
+                                  gpu_ids=self.gpu_ids) # validate dimensions
+
+                summary(netG_T, input_size=(1, 256, 256))
+                break
+
+            if case('decoder'):
+                netU = define_G(input_nc=512, output_nc=1,
+                                ngf=32, netG='decoder',
+                                norm='instance', dropout_rate=self.dropout_rate,
+                                init_type=self.init_type, init_gain=self.init_gain,
+                                gpu_ids=self.gpu_ids) # validate dimensions
+
+                summary(netU, input_size=[(512, 32, 32), (1, 256, 256)])
+                break
+
+            if case('discriminatorT'):
+                netD_T = define_D(input_nc=1, ndf=64,
+                                  netD='basic',
+                                  norm='instance',
+                                  init_type=self.init_type, init_gain=self.init_gain,
+                                  gpu_ids=self.gpu_ids) # a-OK
+
+                summary(netD_T, input_size=[(1, 256, 256)])
+                break
+
+            if case('discriminatorS'):
+                netD_S = define_D(input_nc=1, ndf=64,
+                                  netD='aux',
+                                  norm='instance',
+                                  init_type=self.init_type, init_gain=self.init_gain,
+                                  gpu_ids=self.gpu_ids) # a-OK
+
+                summary(netD_S, input_size=[(1, 256, 256)])
+                break
+
+            if case('discriminatorP'):
+                netD_P = define_D(input_nc=5, ndf=64,
+                                  netD='basic',
+                                  norm='instance', init_type=self.init_type, init_gain=self.init_gain,
+                                  gpu_ids=self.gpu_ids) # a-OK
+
+                summary(netD_P, input_size=[(5, 256, 256)])
+                break
+
+            print ("Only above options are allowed.")
+            break
+
+if __name__ == "__main__":
+
+    nt = NetTester()
+    test = nt.parse()
+    nt.execute(test.network)

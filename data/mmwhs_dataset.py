@@ -25,8 +25,8 @@ class MMWHSDataset(BaseDataset):
         self.dir_S = os.path.join(opt.dataroot, opt.phase + 'S')  # create a path '/path/to/data/trainS'
         self.dir_T = os.path.join(opt.dataroot, opt.phase + 'T')  # create a path '/path/to/data/trainT'
 
-        self.S_paths = sorted(make_dataset(self.dir_S, opt.max_dataset_size))   # load images from '/path/to/data/trainS'
-        self.T_paths = sorted(make_dataset(self.dir_T, opt.max_dataset_size))    # load images from '/path/to/data/trainT'
+        self.S_paths = sorted(make_dataset(self.dir_S, opt.max_dataset_size))   # load image paths from '/path/to/data/trainS'
+        self.T_paths = sorted(make_dataset(self.dir_T, opt.max_dataset_size))    # load image paths from '/path/to/data/trainT'
         self.S_size = len(self.S_paths)  # get the size of dataset S
         self.T_size = len(self.T_paths)  # get the size of dataset T
         ttoS = self.opt.direction == 'TtoS'
@@ -73,5 +73,5 @@ class MMWHSDataset(BaseDataset):
         """
         return max(self.S_size, self.T_size)
 
-    def __class_count__(self):
+    def class_count(self): # Not Sure if this will work, but I hope it does.
         return 5
