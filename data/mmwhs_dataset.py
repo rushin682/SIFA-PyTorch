@@ -32,7 +32,13 @@ class MMWHSDataset(BaseDataset):
         ttoS = self.opt.direction == 'TtoS'
         input_nc = self.opt.output_nc if ttoS else self.opt.input_nc       # get the number of channels of input image
         output_nc = self.opt.input_nc if ttoS else self.opt.output_nc      # get the number of channels of output image
-        self.transform_S = get_transform(self.opt, grayscale=(input_nc == 1)) # maybe method=Image.BILINEAR instead of BICUBIC
+
+        # method=Image.BICUBIC for image | Image.NEAREST for label/mask
+        # need to change the functionality of get_transform method to incorporate both image and mask
+        # since the dataset is loaded from the preprocessed TFRecords folder, we won't be needing any kind of transformations
+        # opt.preprocess = None
+
+        self.transform_S = get_transform(self.opt, grayscale=(input_nc == 1))
         self.transform_T = get_transform(self.opt, grayscale=(output_nc == 1))
 
     def __getitem__(self, index):
@@ -68,6 +74,7 @@ class MMWHSDataset(BaseDataset):
 
     def __len__(self):
         """Return the total number of images in the dataset.
+
         As we have two datasets with potentially different number of images,
         we take a maximum of
         """
